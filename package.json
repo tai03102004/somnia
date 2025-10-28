@@ -1,0 +1,45 @@
+{
+  "name": "crypto-ai-agent",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "deploy:contracts": "node scripts/deploy.js",
+    "compile:contracts": "node scripts/compile.js",
+    "clean": "npx hardhat clean"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "body-parser": "^1.20.2",
+    "ccxt": "^4.1.0",
+    "connect-flash": "^0.1.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "cron": "^4.3.1",
+    "dotenv": "^16.3.1",
+    "events": "^3.3.0",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "method-override": "^3.0.0",
+    "mongodb": "^6.17.0",
+    "mongoose": "^8.16.1",
+    "node-binance-api": "^1.0.11",
+    "node-cron": "^3.0.3",
+    "openai": "^5.8.2",
+    "p-limit": "^6.2.0",
+    "telegraf": "^4.16.3",
+    "ws": "^8.14.2",
+    "ethers": "^6.9.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.19.0"
+  }
+}
