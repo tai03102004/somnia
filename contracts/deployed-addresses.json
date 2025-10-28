@@ -1,0 +1,14 @@
+{
+  "network": "somnia-testnet",
+  "chainId": 50312,
+  "deployer": "0x3b188255700eb8fcf4bc8F604441AB3bb4a30163",
+  "contracts": {
+    "signalStorage": "0xFe695676A86F6F3BDc3b796768c94f661FA97a6c",
+    "tradeExecutor": "0x61385a29749dE1Ad27BC350db5bcb1Fc294090cb"
+  },
+  "timestamp": "2025-10-28T02:20:03.287Z",
+  "explorerUrls": {
+    "signalStorage": "https://somnia-devnet.socialscan.io/address/0xFe695676A86F6F3BDc3b796768c94f661FA97a6c",
+    "tradeExecutor": "https://somnia-devnet.socialscan.io/address/0x61385a29749dE1Ad27BC350db5bcb1Fc294090cb"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "_format": "hh-sol-cache-2",
+  "files": {
+    "/Users/macbookpro14m1pro/Desktop/Crypto/Crypto-BE-AI/contracts/SignalStorage.sol": {
+      "lastModificationDate": 1761495039181,
+      "contentHash": "99c2d65f376d531816ea7c5515f4de27",
+      "sourceName": "contracts/SignalStorage.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "SignalStorage"
+      ]
+    },
+    "/Users/macbookpro14m1pro/Desktop/Crypto/Crypto-BE-AI/contracts/TradeExecutor.sol": {
+      "lastModificationDate": 1761494963223,
+      "contentHash": "21d63d49d2b581f30f6d1f85c467f144",
+      "sourceName": "contracts/TradeExecutor.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "optimizer": {
+            "enabled": true,
+            "runs": 200
+          },
+          "evmVersion": "paris",
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [
+        "^0.8.0"
+      ],
+      "artifacts": [
+        "IERC20",
+        "TradeExecutor"
+      ]
+    }
+  }
+}
