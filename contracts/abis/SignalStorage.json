@@ -3,9 +3,52 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "signalId",
+        "type": "uint256"
+      },
+      {
         "indexed": false,
         "internalType": "string",
-        "name": "coin",
+        "name": "symbol",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "action",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "confidence",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "submitter",
+        "type": "address"
+      }
+    ],
+    "name": "NewSignal",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "sentimentId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "symbol",
         "type": "string"
       },
       {
@@ -17,7 +60,7 @@
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "timestamp",
+        "name": "score",
         "type": "uint256"
       }
     ],
@@ -35,31 +78,125 @@
       },
       {
         "indexed": false,
-        "internalType": "string",
-        "name": "coin",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "action",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "confidence",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
         "internalType": "uint256",
         "name": "timestamp",
         "type": "uint256"
       }
     ],
-    "name": "SignalSubmitted",
+    "name": "SignalExecuted",
     "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_count",
+        "type": "uint256"
+      }
+    ],
+    "name": "getLatestSignals",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "action",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "confidence",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "entryPoint",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "stopLoss",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "takeProfit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "submitter",
+            "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "executed",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct SignalStorage.Signal[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_sentimentId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getSentiment",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "string",
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "sentiment",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "score",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          }
+        ],
+        "internalType": "struct SignalStorage.Sentiment",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
   },
   {
     "inputs": [
@@ -74,8 +211,13 @@
       {
         "components": [
           {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
             "internalType": "string",
-            "name": "coin",
+            "name": "symbol",
             "type": "string"
           },
           {
@@ -104,11 +246,6 @@
             "type": "uint256"
           },
           {
-            "internalType": "string",
-            "name": "reasoning",
-            "type": "string"
-          },
-          {
             "internalType": "uint256",
             "name": "timestamp",
             "type": "uint256"
@@ -117,6 +254,11 @@
             "internalType": "address",
             "name": "submitter",
             "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "executed",
+            "type": "bool"
           }
         ],
         "internalType": "struct SignalStorage.Signal",
@@ -130,72 +272,67 @@
   {
     "inputs": [
       {
-        "internalType": "string",
-        "name": "_coin",
-        "type": "string"
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
       }
     ],
-    "name": "getSignalsByCoin",
+    "name": "getUserSignals",
     "outputs": [
       {
-        "components": [
-          {
-            "internalType": "string",
-            "name": "coin",
-            "type": "string"
-          },
-          {
-            "internalType": "string",
-            "name": "action",
-            "type": "string"
-          },
-          {
-            "internalType": "uint256",
-            "name": "confidence",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "entryPoint",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "stopLoss",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "takeProfit",
-            "type": "uint256"
-          },
-          {
-            "internalType": "string",
-            "name": "reasoning",
-            "type": "string"
-          },
-          {
-            "internalType": "uint256",
-            "name": "timestamp",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "submitter",
-            "type": "address"
-          }
-        ],
-        "internalType": "struct SignalStorage.Signal[]",
+        "internalType": "uint256[]",
         "name": "",
-        "type": "tuple[]"
+        "type": "uint256[]"
       }
     ],
     "stateMutability": "view",
     "type": "function"
   },
   {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_signalId",
+        "type": "uint256"
+      }
+    ],
+    "name": "markSignalExecuted",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "_symbol",
+        "type": "string"
+      },
+      {
+        "internalType": "string",
+        "name": "_sentiment",
+        "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "_score",
+        "type": "uint256"
+      }
+    ],
+    "name": "recordSentiment",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [],
-    "name": "getTotalSignals",
+    "name": "sentimentCount",
     "outputs": [
       {
         "internalType": "uint256",
@@ -209,19 +346,48 @@
   {
     "inputs": [
       {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "sentiments",
+    "outputs": [
+      {
         "internalType": "string",
-        "name": "_coin",
+        "name": "symbol",
         "type": "string"
       },
       {
         "internalType": "string",
-        "name": "_sentiment",
+        "name": "sentiment",
         "type": "string"
+      },
+      {
+        "internalType": "uint256",
+        "name": "score",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
       }
     ],
-    "name": "recordSentiment",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "signalCount",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -235,8 +401,13 @@
     "name": "signals",
     "outputs": [
       {
+        "internalType": "uint256",
+        "name": "id",
+        "type": "uint256"
+      },
+      {
         "internalType": "string",
-        "name": "coin",
+        "name": "symbol",
         "type": "string"
       },
       {
@@ -265,11 +436,6 @@
         "type": "uint256"
       },
       {
-        "internalType": "string",
-        "name": "reasoning",
-        "type": "string"
-      },
-      {
         "internalType": "uint256",
         "name": "timestamp",
         "type": "uint256"
@@ -278,6 +444,11 @@
         "internalType": "address",
         "name": "submitter",
         "type": "address"
+      },
+      {
+        "internalType": "bool",
+        "name": "executed",
+        "type": "bool"
       }
     ],
     "stateMutability": "view",
@@ -287,71 +458,7 @@
     "inputs": [
       {
         "internalType": "string",
-        "name": "",
-        "type": "string"
-      },
-      {
-        "internalType": "uint256",
-        "name": "",
-        "type": "uint256"
-      }
-    ],
-    "name": "signalsByCoin",
-    "outputs": [
-      {
-        "internalType": "string",
-        "name": "coin",
-        "type": "string"
-      },
-      {
-        "internalType": "string",
-        "name": "action",
-        "type": "string"
-      },
-      {
-        "internalType": "uint256",
-        "name": "confidence",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "entryPoint",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "stopLoss",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "takeProfit",
-        "type": "uint256"
-      },
-      {
-        "internalType": "string",
-        "name": "reasoning",
-        "type": "string"
-      },
-      {
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "submitter",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "string",
-        "name": "_coin",
+        "name": "_symbol",
         "type": "string"
       },
       {
@@ -378,11 +485,6 @@
         "internalType": "uint256",
         "name": "_takeProfit",
         "type": "uint256"
-      },
-      {
-        "internalType": "string",
-        "name": "_reasoning",
-        "type": "string"
       }
     ],
     "name": "submitSignal",
@@ -394,6 +496,30 @@
       }
     ],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      },
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "userSignals",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ]

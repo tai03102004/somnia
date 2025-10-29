@@ -1,6 +1,7 @@
 import {
     ethers
 } from 'ethers';
+import EventEmitter from 'events';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -11,146 +12,161 @@ const __filename = fileURLToPath(
     import.meta.url);
 const __dirname = path.dirname(__filename);
 
-class BlockchainConnector {
+class BlockchainConnector extends EventEmitter {
     constructor() {
+        super();
         this.provider = null;
         this.wallet = null;
-        this.signalStorageContract = null;
-        this.tradeExecutorContract = null;
+        this.contracts = {};
         this.isConnected = false;
+    }
+
+    loadABI(contractName) {
+        const abiPath = path.join(__dirname, `../contracts/abis/${contractName}.json`);
+        if (fs.existsSync(abiPath)) {
+            return JSON.parse(fs.readFileSync(abiPath, 'utf8'));
+        }
+        console.warn(`⚠️ ABI not found for ${contractName}`);
+        return [];
     }
 
     async initialize() {
         try {
-            // Somnia Testnet Configuration
-            const somniaConfig = {
-                rpcUrl: process.env.SOMNIA_RPC_URL || 'https://dream-rpc.somnia.network',
-                chainId: parseInt(process.env.SOMNIA_CHAIN_ID || '50311'),
-                privateKey: process.env.SOMNIA_PRIVATE_KEY,
-                signalStorageAddress: process.env.SIGNAL_STORAGE_ADDRESS,
-                tradeExecutorAddress: process.env.TRADE_EXECUTOR_ADDRESS
-            };
+            console.log('🔗 Initializing Blockchain Connector...');
 
-            if (!somniaConfig.privateKey) {
-                throw new Error('SOMNIA_PRIVATE_KEY not set in environment');
-            }
+            const rpcUrl = process.env.SOMNIA_RPC_URL || 'https://dream-rpc.somnia.network';
+            const chainId = parseInt(process.env.SOMNIA_CHAIN_ID || '50311');
 
-            console.log(`🔗 Connecting to Somnia Network...`);
-            console.log(`📍 RPC: ${somniaConfig.rpcUrl}`);
-            console.log(`🆔 Chain ID: ${somniaConfig.chainId}`);
-
-            // ✨ FIX: Create network object without ENS support
-            const network = {
+            this.provider = new ethers.JsonRpcProvider(rpcUrl, {
                 name: 'somnia-testnet',
-                chainId: somniaConfig.chainId
-            };
+                chainId: chainId
+            });
 
-            this.provider = new ethers.JsonRpcProvider(
-                somniaConfig.rpcUrl,
-                new ethers.Network("somnia-testnet", somniaConfig.chainId)
+            this.wallet = new ethers.Wallet(
+                process.env.SOMNIA_PRIVATE_KEY || process.env.PRIVATE_KEY,
+                this.provider
             );
 
-
-            this.wallet = new ethers.Wallet(somniaConfig.privateKey, this.provider);
             console.log(`💼 Wallet: ${this.wallet.address}`);
 
-            // Check balance
-            const balance = await this.provider.getBalance(this.wallet.address);
-            console.log(`💰 Wallet Balance: ${ethers.formatEther(balance)} STT`);
+            // Load ABIs from files
+            const signalStorageABI = this.loadABI('SignalStorage');
+            const tradeExecutorABI = this.loadABI('TradeExecutor');
+            const daoVotingABI = this.loadABI('DAOVoting');
+            const rewardTokenABI = this.loadABI('RewardToken');
 
-            // ✨ Only load contracts if addresses are provided
-            if (somniaConfig.signalStorageAddress && somniaConfig.signalStorageAddress !== 'deployed_contract_address') {
-                // Load contract ABIs
-                const abisPath = path.join(__dirname, '../contracts/abis');
-
-                if (fs.existsSync(path.join(abisPath, 'SignalStorage.json'))) {
-                    const signalStorageABI = JSON.parse(
-                        fs.readFileSync(path.join(abisPath, 'SignalStorage.json'), 'utf8')
-                    );
-
-                    this.signalStorageContract = new ethers.Contract(
-                        somniaConfig.signalStorageAddress,
-                        signalStorageABI,
-                        this.wallet
-                    );
-                    console.log(`✅ SignalStorage contract connected: ${somniaConfig.signalStorageAddress}`);
-                } else {
-                    console.warn('⚠️ SignalStorage ABI not found. Run: npm run compile:contracts');
-                }
-            } else {
-                console.warn('⚠️ SIGNAL_STORAGE_ADDRESS not set. Skipping contract initialization.');
+            // Initialize contracts
+            if (process.env.SIGNAL_STORAGE_ADDRESS && signalStorageABI.length > 0) {
+                this.contracts.signalStorage = new ethers.Contract(
+                    process.env.SIGNAL_STORAGE_ADDRESS,
+                    signalStorageABI,
+                    this.wallet
+                );
+                console.log('✅ SignalStorage contract loaded');
             }
 
-            if (somniaConfig.tradeExecutorAddress && somniaConfig.tradeExecutorAddress !== 'deployed_contract_address') {
-                const abisPath = path.join(__dirname, '../contracts/abis');
+            if (process.env.TRADE_EXECUTOR_ADDRESS && tradeExecutorABI.length > 0) {
+                this.contracts.tradeExecutor = new ethers.Contract(
+                    process.env.TRADE_EXECUTOR_ADDRESS,
+                    tradeExecutorABI,
+                    this.wallet
+                );
+                console.log('✅ TradeExecutor contract loaded');
+            }
 
-                if (fs.existsSync(path.join(abisPath, 'TradeExecutor.json'))) {
-                    const tradeExecutorABI = JSON.parse(
-                        fs.readFileSync(path.join(abisPath, 'TradeExecutor.json'), 'utf8')
-                    );
+            if (process.env.DAO_VOTING_ADDRESS && daoVotingABI.length > 0) {
+                this.contracts.daoVoting = new ethers.Contract(
+                    process.env.DAO_VOTING_ADDRESS,
+                    daoVotingABI,
+                    this.wallet
+                );
+                console.log('✅ DAOVoting contract loaded');
+            }
 
-                    this.tradeExecutorContract = new ethers.Contract(
-                        somniaConfig.tradeExecutorAddress,
-                        tradeExecutorABI,
-                        this.wallet
-                    );
-                    console.log(`✅ TradeExecutor contract connected: ${somniaConfig.tradeExecutorAddress}`);
-                } else {
-                    console.warn('⚠️ TradeExecutor ABI not found. Run: npm run compile:contracts');
-                }
-            } else {
-                console.warn('⚠️ TRADE_EXECUTOR_ADDRESS not set. Skipping contract initialization.');
+            if (process.env.REWARD_TOKEN_ADDRESS && rewardTokenABI.length > 0) {
+                this.contracts.rewardToken = new ethers.Contract(
+                    process.env.REWARD_TOKEN_ADDRESS,
+                    rewardTokenABI,
+                    this.wallet
+                );
+                console.log('✅ RewardToken contract loaded');
             }
 
             this.isConnected = true;
+            this.setupEventListeners();
+
             return {
                 success: true,
-                wallet: this.wallet.address
+                wallet: this.wallet.address,
+                contracts: Object.keys(this.contracts)
             };
-
         } catch (error) {
-            console.error('❌ Blockchain connection failed:', error.message);
+            console.error('❌ Blockchain initialization failed:', error.message);
             return {
                 success: false,
                 error: error.message
             };
+        }
+    }
+
+    setupEventListeners() {
+        // Listen to NewSignal events
+        this.contracts.signalStorage.on('NewSignal', (signalId, symbol, action, confidence, event) => {
+            console.log(`📡 NewSignal event: ${signalId} - ${symbol} ${action}`);
+            this.emit('newSignalOnChain', {
+                signalId: signalId.toString(),
+                symbol,
+                action,
+                confidence: Number(confidence) / 100,
+                blockNumber: event.log.blockNumber
+            });
+        });
+
+        // Listen to TradeExecuted events
+        if (this.contracts.tradeExecutor) {
+            this.contracts.tradeExecutor.on('TradeExecuted', (tradeId, symbol, side, amount, event) => {
+                console.log(`📡 TradeExecuted: ${tradeId} - ${symbol} ${side}`);
+                this.emit('tradeExecutedOnChain', {
+                    tradeId: tradeId.toString(),
+                    symbol,
+                    side,
+                    amount: ethers.formatEther(amount),
+                    blockNumber: event.log.blockNumber
+                });
+            });
         }
     }
 
     async submitSignal(signal) {
-        if (!this.signalStorageContract) {
-            console.warn('⚠️ SignalStorage contract not initialized - skipping on-chain submission');
-            return {
-                success: false,
-                error: 'Contract not initialized'
-            };
-        }
-
         try {
-            console.log(`📤 Submitting signal to blockchain: ${signal.action} ${signal.coin}`);
+            const {
+                coin,
+                action,
+                confidence,
+                entryPoint,
+                stopLoss,
+                takeProfit
+            } = signal;
 
-            const tx = await this.signalStorageContract.submitSignal(
-                signal.coin,
-                signal.action,
-                Math.floor(signal.confidence * 100),
-                Math.floor(signal.entryPoint || 0),
-                Math.floor(signal.stopLoss || 0),
-                Math.floor(signal.takeProfit || 0),
-                signal.reasoning || ''
+            const tx = await this.contracts.signalStorage.submitSignal(
+                coin,
+                action,
+                Math.floor(confidence * 100), // Convert to integer percentage
+                ethers.parseEther(entryPoint.toString()),
+                ethers.parseEther(stopLoss?.toString() || '0'),
+                ethers.parseEther(takeProfit?.toString() || '0')
             );
 
-            console.log(`⏳ Transaction sent: ${tx.hash}`);
             const receipt = await tx.wait();
-            console.log(`✅ Signal submitted on-chain! Block: ${receipt.blockNumber}`);
+            console.log(`✅ Signal submitted on-chain: ${receipt.hash}`);
 
             return {
                 success: true,
-                txHash: tx.hash,
+                txHash: receipt.hash,
                 blockNumber: receipt.blockNumber
             };
-
         } catch (error) {
-            console.error('❌ Failed to submit signal:', error.message);
+            console.error('❌ Submit signal failed:', error);
             return {
                 success: false,
                 error: error.message
@@ -158,65 +174,30 @@ class BlockchainConnector {
         }
     }
 
-    async recordSentiment(coin, sentiment) {
-        if (!this.signalStorageContract) {
-            return {
-                success: false,
-                error: 'Contract not initialized'
-            };
-        }
-
+    async executeTrade(trade) {
         try {
-            const tx = await this.signalStorageContract.recordSentiment(coin, sentiment);
-            const receipt = await tx.wait();
-
-            console.log(`📊 Sentiment recorded on-chain: ${coin} - ${sentiment}`);
-
-            return {
-                success: true,
-                txHash: tx.hash,
-                blockNumber: receipt.blockNumber
-            };
-
-        } catch (error) {
-            console.error('❌ Failed to record sentiment:', error.message);
-            return {
-                success: false,
-                error: error.message
-            };
-        }
-    }
-
-    async executeTrade(symbol, side, amount, price) {
-        if (!this.tradeExecutorContract) {
-            console.warn('⚠️ TradeExecutor contract not initialized - skipping on-chain execution');
-            return {
-                success: false,
-                error: 'Contract not initialized'
-            };
-        }
-
-        try {
-            console.log(`🔄 Executing trade on-chain: ${side} ${symbol}`);
-
-            const tx = await this.tradeExecutorContract.executeTrade(
+            const {
                 symbol,
                 side,
-                Math.floor(amount * 1e6), // Convert to wei-like format
-                Math.floor(price * 1e2)
+                amount
+            } = trade;
+
+            const tx = await this.contracts.tradeExecutor.executeTrade(
+                symbol,
+                side,
+                ethers.parseEther(amount.toString())
             );
 
             const receipt = await tx.wait();
-            console.log(`✅ Trade executed on-chain! Block: ${receipt.blockNumber}`);
+            console.log(`✅ Trade executed on-chain: ${receipt.hash}`);
 
             return {
                 success: true,
-                txHash: tx.hash,
+                txHash: receipt.hash,
                 blockNumber: receipt.blockNumber
             };
-
         } catch (error) {
-            console.error('❌ Failed to execute trade:', error.message);
+            console.error('❌ Execute trade failed:', error);
             return {
                 success: false,
                 error: error.message
@@ -224,30 +205,22 @@ class BlockchainConnector {
         }
     }
 
-    async recordRiskAlert(symbol, riskLevel, message) {
-        if (!this.tradeExecutorContract) {
-            return {
-                success: false,
-                error: 'Contract not initialized'
-            };
-        }
-
+    async recordSentiment(symbol, sentiment, score) {
         try {
-            const tx = await this.tradeExecutorContract.recordRiskAlert(
+            // Optional: if you have a sentiment recording function
+            const tx = await this.contracts.signalStorage.recordSentiment(
                 symbol,
-                riskLevel,
-                message
+                sentiment,
+                Math.floor(score * 100)
             );
 
-            await tx.wait();
-            console.log(`⚠️ Risk alert recorded on-chain: ${symbol} - ${riskLevel}`);
-
+            const receipt = await tx.wait();
             return {
-                success: true
+                success: true,
+                txHash: receipt.hash
             };
-
         } catch (error) {
-            console.error('❌ Failed to record risk alert:', error.message);
+            console.error('❌ Record sentiment failed:', error);
             return {
                 success: false,
                 error: error.message
@@ -255,26 +228,105 @@ class BlockchainConnector {
         }
     }
 
-    async getSignalHistory(coin) {
-        if (!this.signalStorageContract) {
-            return [];
-        }
-
+    async createVotingProposal(signalId, description) {
         try {
-            const signals = await this.signalStorageContract.getSignalsByCoin(coin);
-            return signals;
+            if (!this.contracts.daoVoting) {
+                throw new Error('DAO Voting contract not initialized');
+            }
+
+            const tx = await this.contracts.daoVoting.createProposal(signalId, description);
+            const receipt = await tx.wait();
+
+            console.log(`✅ Proposal created: ${receipt.hash}`);
+            return {
+                success: true,
+                txHash: receipt.hash,
+                proposalId: signalId
+            };
         } catch (error) {
-            console.error('❌ Failed to get signal history:', error.message);
-            return [];
+            console.error('❌ Create proposal failed:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    async voteOnSignal(proposalId, support) {
+        try {
+            if (!this.contracts.daoVoting) {
+                throw new Error('DAO Voting contract not initialized');
+            }
+
+            const tx = await this.contracts.daoVoting.vote(proposalId, support);
+            const receipt = await tx.wait();
+
+            console.log(`✅ Vote cast: ${receipt.hash}`);
+            return {
+                success: true,
+                txHash: receipt.hash
+            };
+        } catch (error) {
+            console.error('❌ Vote failed:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    async rewardUser(userAddress, amount) {
+        try {
+            if (!this.contracts.rewardToken) {
+                throw new Error('Reward token contract not initialized');
+            }
+
+            const tx = await this.contracts.rewardToken.transfer(
+                userAddress,
+                ethers.parseEther(amount.toString())
+            );
+            const receipt = await tx.wait();
+
+            console.log(`✅ Reward sent: ${receipt.hash}`);
+            return {
+                success: true,
+                txHash: receipt.hash
+            };
+        } catch (error) {
+            console.error('❌ Reward failed:', error);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    async getSignalById(signalId) {
+        try {
+            const signal = await this.contracts.signalStorage.getSignal(signalId);
+            return {
+                success: true,
+                data: {
+                    symbol: signal.symbol,
+                    action: signal.action,
+                    confidence: Number(signal.confidence) / 100,
+                    timestamp: Number(signal.timestamp)
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
     getStatus() {
         return {
             isConnected: this.isConnected,
-            walletAddress: this.wallet?.address || null,
-            hasSignalStorage: !!this.signalStorageContract,
-            hasTradeExecutor: !!this.tradeExecutorContract
+            network: this.provider?.network?.name,
+            address: this.wallet?.address,
+            contracts: Object.keys(this.contracts)
         };
     }
 }

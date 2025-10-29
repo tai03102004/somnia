@@ -16,9 +16,8 @@ const __dirname = path.dirname(__filename);
 
 async function deployContracts() {
     try {
-        console.log('🚀 Deploying contracts to Somnia Testnet...\n');
+        console.log('🚀 Deploying ALL contracts to Somnia Testnet...\n');
 
-        // Check environment variables
         if (!process.env.SOMNIA_PRIVATE_KEY) {
             throw new Error('SOMNIA_PRIVATE_KEY not set in .env file');
         }
@@ -26,37 +25,26 @@ async function deployContracts() {
         const rpcUrl = process.env.SOMNIA_RPC_URL || 'https://dream-rpc.somnia.network';
         const chainId = parseInt(process.env.SOMNIA_CHAIN_ID || '50311');
 
-        // ✨ FIX: Create network object without ENS
-        const network = {
+        const provider = new ethers.JsonRpcProvider(rpcUrl, {
             name: 'somnia-testnet',
             chainId: chainId
-        };
-
-        // Initialize provider correctly for ethers v6
-        const provider = new ethers.JsonRpcProvider(
-            rpcUrl,
-            new ethers.Network("somnia-testnet", chainId)
-        );
+        });
 
         const wallet = new ethers.Wallet(process.env.SOMNIA_PRIVATE_KEY, provider);
-
-        console.log(`💼 Deploying from wallet: ${wallet.address}`);
+        console.log(`💼 Deploying from: ${wallet.address}`);
 
         const balance = await provider.getBalance(wallet.address);
-        console.log(`💰 Wallet balance: ${ethers.formatEther(balance)} STT\n`);
+        console.log(`💰 Balance: ${ethers.formatEther(balance)} STT\n`);
 
         if (balance === 0n) {
-            console.warn('⚠️  WARNING: Wallet has zero balance!');
-            console.log('Please get testnet tokens from Somnia faucet first.');
-            console.log('Visit: https://somnia.network/faucet');
+            console.warn('⚠️  WARNING: Zero balance! Get testnet tokens first.');
             return;
         }
 
-
-        // Load compiled contracts
         const artifactsPath = path.join(__dirname, '../artifacts/contracts');
+        const deployedContracts = {};
 
-        // Deploy SignalStorage
+        // 1. Deploy SignalStorage
         console.log('📝 Deploying SignalStorage...');
         const SignalStorageArtifact = JSON.parse(
             fs.readFileSync(path.join(artifactsPath, 'SignalStorage.sol/SignalStorage.json'))
@@ -68,10 +56,10 @@ async function deployContracts() {
         );
         const signalStorage = await SignalStorageFactory.deploy();
         await signalStorage.waitForDeployment();
-        const signalStorageAddress = await signalStorage.getAddress();
-        console.log(`✅ SignalStorage deployed at: ${signalStorageAddress}\n`);
+        deployedContracts.signalStorage = await signalStorage.getAddress();
+        console.log(`✅ SignalStorage: ${deployedContracts.signalStorage}\n`);
 
-        // Deploy TradeExecutor
+        // 2. Deploy TradeExecutor
         console.log('📝 Deploying TradeExecutor...');
         const TradeExecutorArtifact = JSON.parse(
             fs.readFileSync(path.join(artifactsPath, 'TradeExecutor.sol/TradeExecutor.json'))
@@ -83,50 +71,115 @@ async function deployContracts() {
         );
         const tradeExecutor = await TradeExecutorFactory.deploy();
         await tradeExecutor.waitForDeployment();
-        const tradeExecutorAddress = await tradeExecutor.getAddress();
-        console.log(`✅ TradeExecutor deployed at: ${tradeExecutorAddress}\n`);
+        deployedContracts.tradeExecutor = await tradeExecutor.getAddress();
+        console.log(`✅ TradeExecutor: ${deployedContracts.tradeExecutor}\n`);
+
+        // 3. Deploy DAOVoting
+        console.log('📝 Deploying DAOVoting...');
+        const DAOVotingArtifact = JSON.parse(
+            fs.readFileSync(path.join(artifactsPath, 'DAOVoting.sol/DAOVoting.json'))
+        );
+        const DAOVotingFactory = new ethers.ContractFactory(
+            DAOVotingArtifact.abi,
+            DAOVotingArtifact.bytecode,
+            wallet
+        );
+        const daoVoting = await DAOVotingFactory.deploy();
+        await daoVoting.waitForDeployment();
+        deployedContracts.daoVoting = await daoVoting.getAddress();
+        console.log(`✅ DAOVoting: ${deployedContracts.daoVoting}\n`);
+
+        // 4. Deploy RewardToken
+        console.log('📝 Deploying RewardToken...');
+        const RewardTokenArtifact = JSON.parse(
+            fs.readFileSync(path.join(artifactsPath, 'RewardToken.sol/RewardToken.json'))
+        );
+        const RewardTokenFactory = new ethers.ContractFactory(
+            RewardTokenArtifact.abi,
+            RewardTokenArtifact.bytecode,
+            wallet
+        );
+        const rewardToken = await RewardTokenFactory.deploy(1000000); // 1M tokens
+        await rewardToken.waitForDeployment();
+        deployedContracts.rewardToken = await rewardToken.getAddress();
+        console.log(`✅ RewardToken: ${deployedContracts.rewardToken}\n`);
 
         // Save deployment info
         const deploymentInfo = {
             network: 'somnia-testnet',
             chainId: chainId,
             deployer: wallet.address,
-            contracts: {
-                signalStorage: signalStorageAddress,
-                tradeExecutor: tradeExecutorAddress
-            },
+            contracts: deployedContracts,
             timestamp: new Date().toISOString(),
             explorerUrls: {
-                signalStorage: `https://somnia-devnet.socialscan.io/address/${signalStorageAddress}`,
-                tradeExecutor: `https://somnia-devnet.socialscan.io/address/${tradeExecutorAddress}`
+                signalStorage: `https://somnia-devnet.socialscan.io/address/${deployedContracts.signalStorage}`,
+                tradeExecutor: `https://somnia-devnet.socialscan.io/address/${deployedContracts.tradeExecutor}`,
+                daoVoting: `https://somnia-devnet.socialscan.io/address/${deployedContracts.daoVoting}`,
+                rewardToken: `https://somnia-devnet.socialscan.io/address/${deployedContracts.rewardToken}`
             }
         };
 
+        // Save to JSON
         const deploymentPath = path.join(__dirname, '../contracts/deployed-addresses.json');
         fs.writeFileSync(deploymentPath, JSON.stringify(deploymentInfo, null, 2));
 
+        // Update .env file
+        const envPath = path.join(__dirname, '../.env');
+        let envContent = fs.readFileSync(envPath, 'utf8');
+
+        // Remove old addresses
+        envContent = envContent.replace(/SIGNAL_STORAGE_ADDRESS=.*/g, '');
+        envContent = envContent.replace(/TRADE_EXECUTOR_ADDRESS=.*/g, '');
+        envContent = envContent.replace(/DAO_VOTING_ADDRESS=.*/g, '');
+        envContent = envContent.replace(/REWARD_TOKEN_ADDRESS=.*/g, '');
+
+        // Add new addresses
+        const newEnvVars = `
+# Smart Contract Addresses (Updated: ${new Date().toISOString()})
+SIGNAL_STORAGE_ADDRESS=${deployedContracts.signalStorage}
+TRADE_EXECUTOR_ADDRESS=${deployedContracts.tradeExecutor}
+DAO_VOTING_ADDRESS=${deployedContracts.daoVoting}
+REWARD_TOKEN_ADDRESS=${deployedContracts.rewardToken}
+`;
+
+        fs.writeFileSync(envPath, envContent + newEnvVars);
+
+        // Save ABIs
+        const abisDir = path.join(__dirname, '../contracts/abis');
+        fs.writeFileSync(
+            path.join(abisDir, 'SignalStorage.json'),
+            JSON.stringify(SignalStorageArtifact.abi, null, 2)
+        );
+        fs.writeFileSync(
+            path.join(abisDir, 'TradeExecutor.json'),
+            JSON.stringify(TradeExecutorArtifact.abi, null, 2)
+        );
+        fs.writeFileSync(
+            path.join(abisDir, 'DAOVoting.json'),
+            JSON.stringify(DAOVotingArtifact.abi, null, 2)
+        );
+        fs.writeFileSync(
+            path.join(abisDir, 'RewardToken.json'),
+            JSON.stringify(RewardTokenArtifact.abi, null, 2)
+        );
+
         console.log('═══════════════════════════════════════════════════════════');
-        console.log('✅ DEPLOYMENT SUCCESSFUL!');
+        console.log('✅ ALL CONTRACTS DEPLOYED SUCCESSFULLY!');
         console.log('═══════════════════════════════════════════════════════════');
         console.log('\n📋 Contract Addresses:');
-        console.log(`   SignalStorage: ${signalStorageAddress}`);
-        console.log(`   TradeExecutor: ${tradeExecutorAddress}`);
-        console.log('\n🔗 Explorer Links:');
-        console.log(`   SignalStorage: ${deploymentInfo.explorerUrls.signalStorage}`);
-        console.log(`   TradeExecutor: ${deploymentInfo.explorerUrls.tradeExecutor}`);
+        console.log(`   SignalStorage:  ${deployedContracts.signalStorage}`);
+        console.log(`   TradeExecutor:  ${deployedContracts.tradeExecutor}`);
+        console.log(`   DAOVoting:      ${deployedContracts.daoVoting}`);
+        console.log(`   RewardToken:    ${deployedContracts.rewardToken}`);
+        console.log('\n✅ .env file updated automatically!');
+        console.log('✅ ABIs saved to contracts/abis/');
         console.log('\n📝 Next Steps:');
-        console.log('1. Update your .env file with these addresses:');
-        console.log(`   SIGNAL_STORAGE_ADDRESS=${signalStorageAddress}`);
-        console.log(`   TRADE_EXECUTOR_ADDRESS=${tradeExecutorAddress}`);
-        console.log('2. Verify contracts on Somnia Explorer (optional)');
-        console.log('3. Start the AI Agent system: npm start');
+        console.log('1. Restart your Node.js server: npm start');
+        console.log('2. Test API endpoints: curl http://localhost:3000/api/health');
         console.log('═══════════════════════════════════════════════════════════\n');
 
     } catch (error) {
         console.error('❌ Deployment failed:', error.message);
-        if (error.code) {
-            console.error('Error code:', error.code);
-        }
         process.exit(1);
     }
 }

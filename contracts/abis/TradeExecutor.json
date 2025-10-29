@@ -16,49 +16,24 @@
       },
       {
         "indexed": false,
-        "internalType": "uint256",
-        "name": "stopPrice",
-        "type": "uint256"
+        "internalType": "string",
+        "name": "side",
+        "type": "string"
       },
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "timestamp",
+        "name": "amount",
         "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "address",
+        "name": "trader",
+        "type": "address"
       }
     ],
-    "name": "AutoStopLoss",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "symbol",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "riskLevel",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "message",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
-      }
-    ],
-    "name": "RiskAlert",
+    "name": "TradeExecuted",
     "type": "event"
   },
   {
@@ -73,41 +48,11 @@
       {
         "indexed": false,
         "internalType": "string",
-        "name": "symbol",
+        "name": "reason",
         "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "side",
-        "type": "string"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "price",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "trader",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
       }
     ],
-    "name": "TradeExecuted",
+    "name": "TradeFailed",
     "type": "event"
   },
   {
@@ -126,11 +71,6 @@
         "internalType": "uint256",
         "name": "_amount",
         "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "_price",
-        "type": "uint256"
       }
     ],
     "name": "executeTrade",
@@ -145,8 +85,14 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "getTotalTrades",
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "_symbol",
+        "type": "string"
+      }
+    ],
+    "name": "getCurrentPrice",
     "outputs": [
       {
         "internalType": "uint256",
@@ -154,24 +100,24 @@
         "type": "uint256"
       }
     ],
-    "stateMutability": "view",
+    "stateMutability": "pure",
     "type": "function"
   },
   {
     "inputs": [
       {
         "internalType": "uint256",
-        "name": "_tradeId",
+        "name": "_count",
         "type": "uint256"
       }
     ],
-    "name": "getTrade",
+    "name": "getLatestTrades",
     "outputs": [
       {
         "components": [
           {
             "internalType": "uint256",
-            "name": "tradeId",
+            "name": "id",
             "type": "uint256"
           },
           {
@@ -206,7 +152,68 @@
           },
           {
             "internalType": "bool",
-            "name": "executed",
+            "name": "isLive",
+            "type": "bool"
+          }
+        ],
+        "internalType": "struct TradeExecutor.Trade[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "_tradeId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getTrade",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "id",
+            "type": "uint256"
+          },
+          {
+            "internalType": "string",
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "internalType": "string",
+            "name": "side",
+            "type": "string"
+          },
+          {
+            "internalType": "uint256",
+            "name": "amount",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "price",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "timestamp",
+            "type": "uint256"
+          },
+          {
+            "internalType": "address",
+            "name": "trader",
+            "type": "address"
+          },
+          {
+            "internalType": "bool",
+            "name": "isLive",
             "type": "bool"
           }
         ],
@@ -229,51 +236,9 @@
     "name": "getUserTrades",
     "outputs": [
       {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "tradeId",
-            "type": "uint256"
-          },
-          {
-            "internalType": "string",
-            "name": "symbol",
-            "type": "string"
-          },
-          {
-            "internalType": "string",
-            "name": "side",
-            "type": "string"
-          },
-          {
-            "internalType": "uint256",
-            "name": "amount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "price",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "timestamp",
-            "type": "uint256"
-          },
-          {
-            "internalType": "address",
-            "name": "trader",
-            "type": "address"
-          },
-          {
-            "internalType": "bool",
-            "name": "executed",
-            "type": "bool"
-          }
-        ],
-        "internalType": "struct TradeExecutor.Trade[]",
+        "internalType": "uint256[]",
         "name": "",
-        "type": "tuple[]"
+        "type": "uint256[]"
       }
     ],
     "stateMutability": "view",
@@ -282,29 +247,31 @@
   {
     "inputs": [
       {
-        "internalType": "string",
-        "name": "_symbol",
-        "type": "string"
-      },
-      {
-        "internalType": "string",
-        "name": "_riskLevel",
-        "type": "string"
-      },
-      {
-        "internalType": "string",
-        "name": "_message",
-        "type": "string"
+        "internalType": "address",
+        "name": "_user",
+        "type": "address"
       }
     ],
-    "name": "recordRiskAlert",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "name": "getUserVolume",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "totalPnL",
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "totalVolume",
     "outputs": [
       {
         "internalType": "uint256",
@@ -317,7 +284,7 @@
   },
   {
     "inputs": [],
-    "name": "totalTrades",
+    "name": "tradeCount",
     "outputs": [
       {
         "internalType": "uint256",
@@ -340,7 +307,7 @@
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "tradeId",
+        "name": "id",
         "type": "uint256"
       },
       {
@@ -375,7 +342,7 @@
       },
       {
         "internalType": "bool",
-        "name": "executed",
+        "name": "isLive",
         "type": "bool"
       }
     ],
@@ -395,73 +362,15 @@
         "type": "uint256"
       }
     ],
-    "name": "tradesByUser",
+    "name": "userTrades",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "tradeId",
+        "name": "",
         "type": "uint256"
-      },
-      {
-        "internalType": "string",
-        "name": "symbol",
-        "type": "string"
-      },
-      {
-        "internalType": "string",
-        "name": "side",
-        "type": "string"
-      },
-      {
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "price",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
-      },
-      {
-        "internalType": "address",
-        "name": "trader",
-        "type": "address"
-      },
-      {
-        "internalType": "bool",
-        "name": "executed",
-        "type": "bool"
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint256",
-        "name": "_tradeId",
-        "type": "uint256"
-      },
-      {
-        "internalType": "string",
-        "name": "_symbol",
-        "type": "string"
-      },
-      {
-        "internalType": "uint256",
-        "name": "_stopPrice",
-        "type": "uint256"
-      }
-    ],
-    "name": "triggerAutoStopLoss",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   }
 ]

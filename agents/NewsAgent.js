@@ -3,6 +3,7 @@ import {
     spawn
 } from "child_process";
 import path from "path";
+import blockchainConnector from '../services/BlockchainConnector.service.js';
 
 const __filename = fileURLToPath(
     import.meta.url);
@@ -15,6 +16,7 @@ class NewsAgent extends EventEmitter {
         super();
         this.newCache = new Map();
         this.isRunning = false;
+        this.blockchainConnector = blockchainConnector;
     }
 
     async start(config) {
@@ -38,10 +40,16 @@ class NewsAgent extends EventEmitter {
             const newsData = await this.runCrewAIScript();
 
             if (newsData && newsData.length > 0) {
+                const sentiment = this.analyzeSentiment(newsData);
+                const sentimentScore = this.calculateSentimentScore(sentiment);
+
+                // ✅ Record sentiment on blockchain
+                await this.blockchainConnector.recordSentiment('BTC', sentiment, sentimentScore);
+
                 this.emit('marketNews', {
                     news: newsData,
                     timestamp: Date.now(),
-                    sentiment: this.analyzeSentiment(newsData)
+                    sentiment
                 });
             } else {
                 console.warn('No news data collected.');
@@ -101,6 +109,15 @@ class NewsAgent extends EventEmitter {
         if (bullishScore > bearishScore) return 'BULLISH';
         if (bearishScore > bullishScore) return 'BEARISH';
         return 'NEUTRAL';
+    }
+
+    calculateSentimentScore(sentiment) {
+        const scores = {
+            'BULLISH': 0.8,
+            'BEARISH': 0.2,
+            'NEUTRAL': 0.5
+        };
+        return scores[sentiment] || 0.5;
     }
 
     getStatus() {

@@ -1,230 +1,267 @@
-# 🚀 Crypto AI Agent - Web3 Trading Platform
+# Crypto AI Trading Bot với Somnia Blockchain
 
-A decentralized AI-powered cryptocurrency trading platform built on Somnia Network. Features real-time market analysis, automated trading signals, and on-chain transparency.
+## 🚀 Hướng dẫn Setup và Deploy
 
-![Platform](https://img.shields.io/badge/Platform-Somnia-blue)
-![Framework](https://img.shields.io/badge/Framework-Next.js_14-black)
-![Web3](https://img.shields.io/badge/Web3-RainbowKit-purple)
-
-## ✨ Features
-
-### 🤖 AI-Powered Trading
-
-- **Real-time Market Analysis**: Live price monitoring with WebSocket
-- **AI Trading Signals**: GPT-4 powered market analysis and predictions
-- **Technical Indicators**: RSI, MACD, EMA, Bollinger Bands, Stochastic
-- **Auto Trading**: Automated trade execution based on AI signals
-
-### 🔗 Blockchain Integration
-
-- **Somnia Network**: All signals and trades recorded on-chain
-- **Wallet Connect**: MetaMask, WalletConnect, and more
-- **On-Chain Transparency**: Verifiable AI decisions on blockchain
-- **Smart Contracts**: SignalStorage.sol & TradeExecutor.sol
-
-### 📊 Advanced Features
-
-- **Portfolio Management**: Track positions and P&L in real-time
-- **Risk Management**: Auto stop-loss and take-profit
-- **Telegram Alerts**: Real-time notifications
-- **Multi-Agent System**: 6 specialized AI agents working together
-
-## 🛠️ Tech Stack
-
-- **Frontend**: Next.js 14 (App Router), TypeScript, Tailwind CSS
-- **Web3**: Wagmi, RainbowKit, Viem
-- **Backend**: Node.js, Express
-- **Blockchain**: Somnia Network (Testnet)
-- **AI**: OpenRouter API (GPT-4 equivalent)
-- **Real-time**: WebSocket (Binance Stream)
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- Node.js 18+ installed
-- MetaMask or Web3 wallet
-- Somnia Testnet tokens ([Get from faucet](https://faucet.somnia.network))
-
-### Installation
+### 1. Xóa dữ liệu cũ (nếu cần)
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd Crypto-FE-AI
+# Xóa compiled contracts cũ
+rm -rf artifacts cache
 
-# Install dependencies
+# Xóa deployed addresses cũ (optional)
+rm -f contracts/deployed-addresses.json
+
+# Xóa ABIs cũ
+rm -rf contracts/abis
+mkdir -p contracts/abis
+```
+
+### 2. Cài đặt dependencies
+
+```bash
 npm install
-
-# Create environment file
-cp .env.local.example .env.local
-
-# Update .env.local with your configuration
 ```
 
-### Environment Variables
+### 3. Cấu hình .env
 
-```env
-NEXT_PUBLIC_API_URL=http://localhost:3000
-NEXT_PUBLIC_WS_URL=ws://localhost:8081
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id
-```
-
-### Run Development Server
+Tạo file `.env` với nội dung:
 
 ```bash
-npm run dev
+# Somnia Blockchain
+SOMNIA_RPC_URL=https://dream-rpc.somnia.network
+SOMNIA_CHAIN_ID=50311
+SOMNIA_PRIVATE_KEY=your_private_key_here
+
+# Telegram
+TELEGRAM_BOT_TOKEN=your_telegram_token
+TELEGRAM_CHAT_ID=your_chat_id
+
+# AI
+GEMINI=your_gemini_api_key
+GEMINI_MODEL=gemini-pro
+GEMINI_BASE_URL=https://generativelanguage.googleapis.com/v1beta
+
+# Binance
+BINANCE_API_KEY=your_binance_api_key
+BINANCE_API_SECRET=your_binance_secret
 ```
 
-Visit [http://localhost:3001](http://localhost:3001)
+### 4. Compile Smart Contracts
 
-## 📱 Usage
-
-### 1. Connect Wallet
-
-- Click "Connect Wallet" button in header
-- Select MetaMask or your preferred wallet
-- Approve connection to Somnia Testnet
-- Get testnet tokens if needed
-
-### 2. Dashboard
-
-- View real-time Bitcoin & Ethereum prices
-- See AI-generated trading signals
-- Monitor portfolio performance
-- Check agent status
-
-### 3. Trading
-
-- Review AI signals with confidence scores
-- Set stop-loss and take-profit levels
-- Execute trades (demo or live)
-- Track performance in real-time
-
-### 4. Blockchain
-
-- View on-chain signal history
-- Verify trades on Somnia Explorer
-- Check smart contract interactions
-- Monitor gas usage
-
-## 🏗️ Project Structure
-
-```
-Crypto-FE-AI/
-├── app/
-│   ├── (pages)/
-│   │   ├── page.tsx          # Dashboard
-│   │   ├── trading/          # Trading interface
-│   │   ├── portfolio/        # Portfolio management
-│   │   ├── history/          # Trade history
-│   │   ├── blockchain/       # On-chain data
-│   │   ├── agents/           # Agent monitoring
-│   │   └── settings/         # System settings
-│   ├── layout.tsx            # Root layout with Web3
-│   └── globals.css           # Global styles
-├── components/
-│   ├── Dashboard.tsx         # Main dashboard
-│   ├── Header.tsx            # Header with wallet connect
-│   ├── Sidebar.tsx           # Navigation sidebar
-│   ├── WalletInfo.tsx        # Wallet information
-│   ├── PriceCard.tsx         # Price display
-│   ├── TradingSignals.tsx    # AI signals
-│   ├── PortfolioOverview.tsx # Portfolio stats
-│   ├── AgentStatus.tsx       # Agent monitoring
-│   ├── BlockchainInfo.tsx    # Blockchain data
-│   └── RecentTrades.tsx      # Trade history
-├── providers/
-│   └── Web3Provider.tsx      # Web3 configuration
-├── lib/
-│   └── api.ts                # API client
-└── public/                   # Static assets
+```bash
+npm run compile:contracts
 ```
 
-## 🤖 AI Agents
+**Output:**
 
-The platform uses 6 specialized agents:
+```
+🔨 Compiling smart contracts with Hardhat...
+✅ SignalStorage ABI exported
+✅ TradeExecutor ABI exported
+✅ DAOVoting ABI exported
+✅ RewardToken ABI exported
+```
 
-1. **Market Agent**: Real-time price monitoring
-2. **Analysis Agent**: AI market analysis & signal generation
-3. **Trading Agent**: Automated trade execution
-4. **News Agent**: News sentiment analysis
-5. **Risk Manager**: Risk assessment & portfolio management
-6. **Alert Agent**: Telegram notifications & blockchain events
+### 5. Deploy Smart Contracts
 
-## 📊 Trading Signals
+```bash
+npm run deploy:contracts
+```
 
-AI generates signals with:
+**Output:**
 
-- **Action**: BUY, SELL, or HOLD
-- **Confidence**: 0-100% (75%+ executes)
-- **Entry Point**: Suggested entry price
-- **Stop Loss**: Auto stop-loss level
-- **Take Profit**: Target profit level
-- **Reasoning**: AI explanation
+```
+🚀 Deploying ALL contracts to Somnia Testnet...
+💼 Deploying from: 0x...
+💰 Balance: 10.0 STT
 
-## 🔐 Security
+📝 Deploying SignalStorage...
+✅ SignalStorage: 0x123...
 
-- All trades executed through smart contracts
-- On-chain verification of AI signals
-- No private keys stored
-- Non-custodial wallet integration
-- Demo mode for testing
+📝 Deploying TradeExecutor...
+✅ TradeExecutor: 0x456...
 
-## 🌐 Somnia Network
+📝 Deploying DAOVoting...
+✅ DAOVoting: 0x789...
 
-**Network Details:**
+📝 Deploying RewardToken...
+✅ RewardToken: 0xabc...
 
-- Chain ID: 50312
-- RPC: https://dream-rpc.somnia.network
-- Explorer: https://somnia-devnet.socialscan.io
-- Faucet: https://faucet.somnia.network
+✅ ALL CONTRACTS DEPLOYED SUCCESSFULLY!
+✅ .env file updated automatically!
+```
 
-**Smart Contracts:**
+### 6. Khởi động hệ thống
 
-- SignalStorage: Records AI trading signals
-- TradeExecutor: Logs trade executions
+```bash
+npm start
+```
 
-## 📈 Roadmap
+**Output:**
 
-- [ ] Multi-chain support
-- [ ] More AI models integration
-- [ ] Social trading features
-- [ ] Mobile app
-- [ ] Advanced charting
-- [ ] Liquidity pool integration
-
-## 🤝 Contributing
-
-This project is part of Somnia AI Hackathon submission.
-
-## 📜 License
-
-MIT License - See LICENSE file for details
-
-## 🔗 Links
-
-- [Frontend Demo](http://localhost:3001)
-- [Backend API](http://localhost:3000)
-- [Somnia Explorer](https://somnia-devnet.socialscan.io)
-- [Documentation](#)
-
-## 💡 Tips
-
-1. **Start with Demo Mode**: Test with virtual balance first
-2. **Connect Wallet**: Get testnet STT tokens from faucet
-3. **Monitor Signals**: Check AI confidence before trading
-4. **Set Stop-Loss**: Always protect your capital
-5. **Verify On-Chain**: Check transactions on Somnia Explorer
-
-## 📞 Support
-
-For issues or questions:
-
-- GitHub Issues: [Create Issue](#)
-- Telegram: [Join Group](#)
-- Email: support@cryptoagent.ai
+```
+🚀 Initializing Agent Orchestrator with Blockchain...
+✅ Connected to Somnia: 0x...
+✅ SignalStorage contract loaded
+✅ TradeExecutor contract loaded
+✅ DAOVoting contract loaded
+✅ RewardToken contract loaded
+✅ All agents initialized and running
+```
 
 ---
 
-Built with ❤️ for Somnia AI Hackathon
+## 📡 API Endpoints
+
+### Health Check
+
+```bash
+curl http://localhost:3000/api/health
+```
+
+### Market Status
+
+```bash
+curl http://localhost:3000/api/market/status
+```
+
+### Trading Signals
+
+```bash
+curl http://localhost:3000/api/market/signals
+```
+
+### Blockchain Status
+
+```bash
+curl http://localhost:3000/api/blockchain/status
+```
+
+### Submit Signal (POST)
+
+```bash
+curl -X POST http://localhost:3000/api/blockchain/submit-signal \
+  -H "Content-Type: application/json" \
+  -d '{
+    "coin": "bitcoin",
+    "action": "BUY",
+    "confidence": 0.85,
+    "entryPoint": 95000,
+    "stopLoss": 93000,
+    "takeProfit": 98000
+  }'
+```
+
+### Create DAO Proposal (POST)
+
+```bash
+curl -X POST http://localhost:3000/api/dao/create-proposal \
+  -H "Content-Type: application/json" \
+  -d '{
+    "signalId": 1,
+    "description": "Validate BTC BUY signal with 85% confidence"
+  }'
+```
+
+### Vote on Proposal (POST)
+
+```bash
+curl -X POST http://localhost:3000/api/dao/vote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "proposalId": 1,
+    "support": true
+  }'
+```
+
+### Distribute Rewards (POST)
+
+```bash
+curl -X POST http://localhost:3000/api/rewards/distribute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "amount": 100
+  }'
+```
+
+---
+
+## 🔍 Verify Contracts on Somnia Explorer
+
+1. Truy cập: https://somnia-devnet.socialscan.io
+2. Paste contract address
+3. Xem transactions và events
+
+---
+
+## 🛠️ Troubleshooting
+
+### Lỗi: "Insufficient balance"
+
+```bash
+# Lấy testnet tokens từ faucet
+https://somnia.network/faucet
+```
+
+### Lỗi: "Contract not initialized"
+
+```bash
+# Kiểm tra .env file có đầy đủ addresses
+cat .env | grep ADDRESS
+```
+
+### Lỗi: "ABI not found"
+
+```bash
+# Compile lại contracts
+npm run compile:contracts
+```
+
+---
+
+## 📊 Architecture
+
+```
+┌────────────────────────────────────────┐
+│         AI Agents Layer                │
+│  (Analysis, Trading, News, Risk)       │
+└────────────┬───────────────────────────┘
+             │
+             ▼
+┌────────────────────────────────────────┐
+│    BlockchainConnector Service         │
+│  - submitSignal()                      │
+│  - executeTrade()                      │
+│  - createProposal()                    │
+│  - rewardUser()                        │
+└────────────┬───────────────────────────┘
+             │
+             ▼
+┌────────────────────────────────────────┐
+│    Somnia Smart Contracts              │
+│  - SignalStorage.sol                   │
+│  - TradeExecutor.sol                   │
+│  - DAOVoting.sol                       │
+│  - RewardToken.sol                     │
+└────────────────────────────────────────┘
+```
+
+---
+
+## 📝 Notes
+
+- **Testnet**: Sử dụng Somnia Testnet (ChainID: 50311)
+- **Gas**: Transactions miễn phí trên testnet
+- **Explorer**: https://somnia-devnet.socialscan.io
+- **Faucet**: https://somnia.network/faucet
+
+---
+
+## 🎯 Next Steps
+
+1. ✅ Deploy contracts
+2. ✅ Test API endpoints
+3. ✅ Verify on explorer
+4. 🔜 Connect frontend
+5. 🔜 Mainnet deployment

@@ -18,7 +18,8 @@ import {
 } from './config/database.js';
 
 import AgentOrchestrator from './core/AgentOrchestrator.js';
-// import apiRoutes from './routes/api.routes.js';
+import apiRoutes from './routes/api.routes.js';
+import blockchainConnector from './services/BlockchainConnector.service.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,18 +59,25 @@ app.use(bodyParser.urlencoded({
 app.use(methodOverride('_method'));
 
 // API Routes
-// app.use('/api', apiRoutes);
+app.use('/api', apiRoutes);
 
 setTimeout(async () => {
-    console.log('🤖 Initializing Telegram Bot...');
+    console.log('🤖 Initializing Complete Trading System...');
 
     const orchestrator = new AgentOrchestrator();
-
-    // Store orchestrator in app for API routes
     app.set('orchestrator', orchestrator);
 
-    const result = await orchestrator.initialize();
+    // Initialize blockchain connector
+    const blockchainConfig = {
+        signalStorageABI: JSON.parse(process.env.SIGNAL_STORAGE_ABI || '[]'),
+        tradeExecutorABI: JSON.parse(process.env.TRADE_EXECUTOR_ABI || '[]'),
+        daoVotingABI: JSON.parse(process.env.DAO_VOTING_ABI || '[]'),
+        rewardTokenABI: JSON.parse(process.env.REWARD_TOKEN_ABI || '[]')
+    };
 
+    await blockchainConnector.initialize(blockchainConfig);
+
+    const result = await orchestrator.initialize();
 
     if (result.success) {
         console.log('✅ Complete Trading System started successfully!');
@@ -79,6 +87,7 @@ setTimeout(async () => {
         console.log('  • Trading Agent - Auto trading');
         console.log('  • News Agent - News monitoring');
         console.log('  • Risk Manager - Risk management');
+        console.log('  • Blockchain Connector - Somnia integration');
     } else {
         console.error('❌ Failed to start Trading System:', result.error);
     }

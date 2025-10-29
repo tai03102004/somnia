@@ -89,38 +89,38 @@ class AgentOrchestrator extends EventEmitter {
     setupAgentCommunication() {
         console.log('🔇 ALL AGENT COMMUNICATION DISABLED');
         // Market Agent -> Analysis Agent
-        // if (this.agents.market && this.agents.analysis) {
-        //     this.agents.market.on('priceUpdate', (data) => {
-        //         // Trigger analysis when significant price changes occur
-        //         if (Math.abs(data.change24h) > 2) {
-        //             const coinId = this.convertSymbolToCoinId(data.symbol);
-        //             if (this.agents.analysis.analyzeAndAlert) {
-        //                 this.agents.analysis.analyzeAndAlert(coinId, false);
-        //             }
-        //         }
-        //     });
+        if (this.agents.market && this.agents.analysis) {
+            this.agents.market.on('priceUpdate', (data) => {
+                // Trigger analysis when significant price changes occur
+                if (Math.abs(data.change24h) > 2) {
+                    const coinId = this.convertSymbolToCoinId(data.symbol);
+                    if (this.agents.analysis.analyzeAndAlert) {
+                        this.agents.analysis.analyzeAndAlert(coinId, false);
+                    }
+                }
+            });
 
-        //     this.agents.market.on('marketDataUpdate', (data) => {
-        //         // Update analysis agent with new market data
-        //         if (this.agents.analysis.updateMarketData) {
-        //             this.agents.analysis.updateMarketData(data);
-        //         }
-        //     });
-        // }
+            this.agents.market.on('marketDataUpdate', (data) => {
+                // Update analysis agent with new market data
+                if (this.agents.analysis.updateMarketData) {
+                    this.agents.analysis.updateMarketData(data);
+                }
+            });
+        }
 
         // News Agent -> Analysis Agent
-        // if (this.agents.news && this.agents.analysis) {
-        //     this.agents.news.on('marketNews', (news) => {
-        //         try {
-        //             if (this.agents.analysis.handleNewsUpdate) {
-        //                 console.log('📰 Processing news update for analysis');
-        //                 this.agents.analysis.handleNewsUpdate(news);
-        //             }
-        //         } catch (error) {
-        //             console.error('❌ Error in news update handler:', error);
-        //         }
-        //     });
-        // }
+        if (this.agents.news && this.agents.analysis) {
+            this.agents.news.on('marketNews', (news) => {
+                try {
+                    if (this.agents.analysis.handleNewsUpdate) {
+                        console.log('📰 Processing news update for analysis');
+                        this.agents.analysis.handleNewsUpdate(news);
+                    }
+                } catch (error) {
+                    console.error('❌ Error in news update handler:', error);
+                }
+            });
+        }
 
         // Analysis Agent -> Risk Manager -> Trading Agent
         if (this.agents.analysis && this.agents.risk) {
@@ -184,6 +184,50 @@ class AgentOrchestrator extends EventEmitter {
         }
     }
 
+    getStatus() {
+        const status = {
+            isRunning: this.isRunning,
+            agents: {},
+            totalAlerts: 0,
+            activeSignals: 0,
+            timestamp: Date.now()
+        };
+
+        for (const [name, agent] of Object.entries(this.agents)) {
+            if (agent && agent.getStatus) {
+                status.agents[name] = agent.getStatus();
+            } else {
+                status.agents[name] = 'unknown';
+            }
+        }
+
+        // Get additional metrics from analysis agent
+        if (this.agents.analysis && this.agents.analysis.getStatus) {
+            const analysisStatus = this.agents.analysis.getStatus();
+            status.totalAlerts = analysisStatus.cronJobs || 0;
+        }
+
+        return status;
+    }
+
+    getSystemStatus() {
+        return this.getStatus();
+    }
+
+    // ✅ Add missing helper function
+    convertSymbolToCoinId(symbol) {
+        const mapping = {
+            'BTCUSDT': 'bitcoin',
+            'ETHUSDT': 'ethereum',
+            'BNBUSDT': 'binancecoin',
+            'ADAUSDT': 'cardano',
+            'DOGEUSDT': 'dogecoin',
+            'XRPUSDT': 'ripple',
+            'SOLUSDT': 'solana'
+        };
+        return mapping[symbol] || 'bitcoin';
+    }
+
     async startAllAgents() {
         const startOrder = ['market', 'news', 'risk', 'trading', 'analysis'];
 
@@ -226,32 +270,6 @@ class AgentOrchestrator extends EventEmitter {
             success: true,
             message: 'System stopped successfully'
         };
-    }
-
-    getSystemStatus() {
-        const status = {
-            isRunning: this.isRunning,
-            agents: {},
-            totalAlerts: 0,
-            activeSignals: 0,
-            timestamp: Date.now()
-        };
-
-        for (const [name, agent] of Object.entries(this.agents)) {
-            if (agent && agent.getStatus) {
-                status.agents[name] = agent.getStatus();
-            } else {
-                status.agents[name] = 'unknown';
-            }
-        }
-
-        // Get additional metrics from analysis agent
-        if (this.agents.analysis && this.agents.analysis.getStatus) {
-            const analysisStatus = this.agents.analysis.getStatus();
-            status.totalAlerts = analysisStatus.cronJobs || 0;
-        }
-
-        return status;
     }
 
     // Manual trigger for testing

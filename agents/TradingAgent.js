@@ -1,4 +1,5 @@
 import BinanceLiveTrading from '../services/BinanceService.service.js';
+import blockchainConnector from '../services/BlockchainConnector.service.js';
 import {
     EventEmitter
 } from 'events';
@@ -23,6 +24,7 @@ class TradingAgent extends EventEmitter {
         };
 
         this.priceMonitor = null;
+        this.blockchainConnector = blockchainConnector;
     }
 
     async start(config) {
@@ -147,6 +149,18 @@ class TradingAgent extends EventEmitter {
 
             this.orderHistory.push(order);
             this.tradingStats.totalTrades++;
+
+            // ✅ Submit trade to blockchain
+            const blockchainResult = await this.blockchainConnector.executeTrade({
+                symbol,
+                side,
+                amount
+            });
+
+            if (blockchainResult.success) {
+                console.log(`✅ Trade recorded on-chain: ${blockchainResult.txHash}`);
+                order.txHash = blockchainResult.txHash;
+            }
 
             if (side === 'buy') {
                 // ✨ Open position

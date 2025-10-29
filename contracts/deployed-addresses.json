@@ -3,12 +3,16 @@
   "chainId": 50312,
   "deployer": "0x3b188255700eb8fcf4bc8F604441AB3bb4a30163",
   "contracts": {
-    "signalStorage": "0xFe695676A86F6F3BDc3b796768c94f661FA97a6c",
-    "tradeExecutor": "0x61385a29749dE1Ad27BC350db5bcb1Fc294090cb"
+    "signalStorage": "0xD7c001a2274386a2b3777D9cD33C9C574DdcA952",
+    "tradeExecutor": "0x5291659E7f7ba53Ea3e1b50C910257193e03A300",
+    "daoVoting": "0xCE84542E9514Aab9Aa2E1f86d76C66EceBd4933B",
+    "rewardToken": "0xBb892705CE7a6d1890Bb4A1e6f8Ea020557471A6"
   },
-  "timestamp": "2025-10-28T02:20:03.287Z",
+  "timestamp": "2025-10-29T02:44:20.353Z",
   "explorerUrls": {
-    "signalStorage": "https://somnia-devnet.socialscan.io/address/0xFe695676A86F6F3BDc3b796768c94f661FA97a6c",
-    "tradeExecutor": "https://somnia-devnet.socialscan.io/address/0x61385a29749dE1Ad27BC350db5bcb1Fc294090cb"
+    "signalStorage": "https://somnia-devnet.socialscan.io/address/0xD7c001a2274386a2b3777D9cD33C9C574DdcA952",
+    "tradeExecutor": "https://somnia-devnet.socialscan.io/address/0x5291659E7f7ba53Ea3e1b50C910257193e03A300",
+    "daoVoting": "https://somnia-devnet.socialscan.io/address/0xCE84542E9514Aab9Aa2E1f86d76C66EceBd4933B",
+    "rewardToken": "https://somnia-devnet.socialscan.io/address/0xBb892705CE7a6d1890Bb4A1e6f8Ea020557471A6"
   }
 }
