@@ -1,0 +1,17 @@
+# Data xử lý
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+joblib
+
+# Deep learning
+tensorflow
+
+# Hỗ trợ ngày tháng
+python-dotenv
+
+# CrewAI và tools liên quan
+crewai
+crewai-tools

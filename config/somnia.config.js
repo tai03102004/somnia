@@ -2,7 +2,7 @@ export const somniaConfig = {
     network: {
         name: 'Somnia Testnet',
         rpcUrl: process.env.SOMNIA_RPC_URL || 'https://dream-rpc.somnia.network',
-        chainId: parseInt(process.env.SOMNIA_CHAIN_ID || '50311'),
+        chainId: parseInt(process.env.SOMNIA_CHAIN_ID || '50312'),
         explorer: 'https://somnia-devnet.socialscan.io'
     },
     contracts: {

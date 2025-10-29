@@ -18,7 +18,7 @@ import {
 } from './config/database.js';
 
 import AgentOrchestrator from './core/AgentOrchestrator.js';
-import apiRoutes from './routes/api.routes.js';
+// import apiRoutes from './routes/api.routes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,7 +58,7 @@ app.use(bodyParser.urlencoded({
 app.use(methodOverride('_method'));
 
 // API Routes
-app.use('/api', apiRoutes);
+// app.use('/api', apiRoutes);
 
 setTimeout(async () => {
     console.log('🤖 Initializing Telegram Bot...');

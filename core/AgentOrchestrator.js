@@ -41,9 +41,9 @@ class AgentOrchestrator extends EventEmitter {
             const sharedConfig = {
                 telegramToken: process.env.TELEGRAM_BOT_TOKEN,
                 chatId: process.env.CHAT_ID,
-                aiApiKey: process.env.OPEN_ROUTER_API_KEY,
-                aiModel: 'openrouter/sonoma-sky-alpha',
-                aiBaseUrl: 'https://openrouter.ai/api/v1',
+                aiApiKey: process.env.GEMINI,
+                aiModel: process.env.GEMINI_MODEL,
+                aiBaseUrl: process.env.GEMINI_BASE_URL,
                 supportedCoins: ['bitcoin', 'ethereum'],
                 alertThresholds: {
                     priceChange: 5,
