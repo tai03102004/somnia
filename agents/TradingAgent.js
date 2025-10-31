@@ -28,34 +28,48 @@ class TradingAgent extends EventEmitter {
     }
 
     async start(config) {
-        this.config = config;
-        this.tradingMode = config?.tradingMode || 'live';
-        this.isRunning = true;
+        try {
+            this.config = config;
+            this.tradingMode = config?.tradingMode || 'live';
+            this.isRunning = true;
 
-        console.log(`🚀 Starting TradingAgent in ${this.tradingMode} mode...`);
+            console.log(`🚀 Starting TradingAgent in ${this.tradingMode} mode...`);
 
-        if (this.tradingMode === 'live' && this.binanceLive) {
-            const testResult = await this.binanceLive.testConnection();
-            if (!testResult.success) {
-                console.warn('⚠️ Binance connection failed, switching to paper mode');
-                this.tradingMode = 'live';
-            } else {
-                const connected = await this.binanceLive.initialize();
-                if (connected) {
-                    this.balance = await this.binanceLive.getAccountBalance();
-                    console.log(`💰 Live Trading connected`);
-                } else {
-                    this.tradingMode = 'live';
+            if (this.tradingMode === 'live' && this.binanceLive) {
+                try {
+                    const testResult = await this.binanceLive.testConnection();
+                    if (!testResult.success) {
+                        console.warn('⚠️ Binance connection failed, staying in live mode');
+                    } else {
+                        const connected = await this.binanceLive.initialize();
+                        if (connected) {
+                            this.balance = await this.binanceLive.getAccountBalance();
+                            console.log(`💰 Live Trading connected - Balance: ${this.balance.USDT.free} USDT`);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Binance init error: ${error.message}`);
                 }
             }
-        }
 
-        // ✨ Start monitoring for live mode
-        if (this.tradingMode === 'live') {
-            this.startPnLMonitoring();
-        }
+            // Start P&L monitoring for live mode
+            if (this.tradingMode === 'live') {
+                this.startPnLMonitoring();
+            }
 
-        console.log(`✅ TradingAgent started in ${this.tradingMode} mode`);
+            console.log(`✅ TradingAgent started successfully`);
+            return {
+                success: true
+            };
+
+        } catch (error) {
+            console.error('❌ TradingAgent start error:', error.message);
+            this.isRunning = true; // Still mark as running
+            return {
+                success: false,
+                error: error.message
+            };
+        }
     }
 
     // ✨ Main execution method
@@ -120,29 +134,29 @@ class TradingAgent extends EventEmitter {
 
     // ✨ LIVE BINANCE TRADING
     async executeLiveOrder(symbol, side, amount, signal) {
-        // try {
-        if (!symbol || !side || !amount || amount <= 0) {
-            throw new Error(`Invalid parameters: symbol=${symbol}, side=${side}, amount=${amount}`);
-        }
+        try {
+            if (!symbol || !side || !amount || amount <= 0) {
+                throw new Error(`Invalid parameters: symbol=${symbol}, side=${side}, amount=${amount}`);
+            }
 
-        if (!this.binanceLive.exchange) {
-            throw new Error('Binance exchange not initialized');
-        }
-        console.log(`🚀 LIVE TRADE: ${side.toUpperCase()} ${symbol} - $${amount}`);
+            if (!this.binanceLive || !this.binanceLive.exchange) {
+                throw new Error('Binance exchange not initialized');
+            }
 
-        const result = await this.binanceLive.createMarketOrder(symbol, side, amount);
-        console.log('>>>>> DEBUG LIVE ORDER RESULT <<<<<');
-        console.log('Result:', result);
-        if (!result) {
-            throw new Error('No result from Binance order');
-        }
+            console.log(`🚀 LIVE TRADE: ${side.toUpperCase()} ${symbol} - $${amount}`);
 
-        if (result.success) {
+            const result = await this.binanceLive.createMarketOrder(symbol, side, amount);
+
+            if (!result || !result.success) {
+                throw new Error(result?.error || 'Order failed');
+            }
+
             const order = {
                 id: result.orderId,
                 symbol: symbol,
                 side: side.toUpperCase(),
                 amount: amount,
+                price: result.price || 0,
                 timestamp: Date.now(),
                 mode: 'LIVE',
             };
@@ -150,20 +164,22 @@ class TradingAgent extends EventEmitter {
             this.orderHistory.push(order);
             this.tradingStats.totalTrades++;
 
-            // ✅ Submit trade to blockchain
-            const blockchainResult = await this.blockchainConnector.executeTrade({
-                symbol,
-                side,
-                amount
-            });
-
-            if (blockchainResult.success) {
-                console.log(`✅ Trade recorded on-chain: ${blockchainResult.txHash}`);
-                order.txHash = blockchainResult.txHash;
-            }
+            // Submit trade to blockchain (non-blocking)
+            this.blockchainConnector.executeTrade({
+                    symbol,
+                    side,
+                    amount,
+                    price: result.price
+                })
+                .then(blockchainResult => {
+                    if (blockchainResult.success) {
+                        console.log(`✅ Trade recorded on-chain: ${blockchainResult.txHash}`);
+                        order.txHash = blockchainResult.txHash;
+                    }
+                })
+                .catch(err => console.warn(`⚠️ Blockchain record failed: ${err.message}`));
 
             if (side === 'buy') {
-                // ✨ Open position
                 const position = {
                     symbol: symbol,
                     side: 'LONG',
@@ -188,22 +204,14 @@ class TradingAgent extends EventEmitter {
                     `🎯 Target: $${position.takeProfit.toFixed(2)}`;
 
                 this.emit('sendTelegramMessage', buyMessage);
-
-                return {
-                    success: true,
-                    order
-                };
             } else {
-                // ✨ Close position and calculate P&L
+                // Close position
                 const position = this.portfolio.get(symbol);
-                console.log("💰 Closing position2:", position);
                 if (position) {
-                    const pnl = this.calculatePnL(position, result.amount);
+                    const pnl = this.calculatePnL(position, result.price);
                     this.updateTradingStats(pnl);
                     this.portfolio.delete(symbol);
-
-                    await this.sendPnLNotification(symbol, position, result.amount, pnl);
-                    console.log(`✅ LIVE SELL executed: ${symbol} @ $${result.price} | P&L: $${pnl.absolute.toFixed(2)}`);
+                    await this.sendPnLNotification(symbol, position, result.price, pnl);
                 }
             }
 
@@ -212,16 +220,14 @@ class TradingAgent extends EventEmitter {
                 success: true,
                 order
             };
-        } else {
-            throw new Error(result.error);
+
+        } catch (error) {
+            console.error('❌ Live order failed:', error.message);
+            return {
+                success: false,
+                error: error.message
+            };
         }
-        // } catch (error) {
-        //     console.error('❌ Live order failed:', error);
-        //     return {
-        //         success: false,
-        //         error: error.message
-        //     };
-        // }
     }
 
     // ✨ Paper trading (for testing)

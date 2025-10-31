@@ -29,7 +29,6 @@ app.use(cors({
     origin: ['http://localhost:3001', 'http://localhost:3000'],
     credentials: true
 }));
-app.use(express.json());
 
 // Kết nối với database
 connect();
@@ -50,14 +49,12 @@ app.use(session({
 
 app.use(flash());
 
-// bodyParser: để có thể lấy data trong req.body (key:value) từ phía client nhập vào
-app.use(bodyParser.urlencoded({
-    extended: false
-}));
-
 // method-override:  use patch, delete,..
 app.use(methodOverride('_method'));
-
+app.use(express.json());
+app.use(express.urlencoded({
+    extended: true
+}));
 // API Routes
 app.use('/api', apiRoutes);
 

@@ -333,8 +333,9 @@ class AlertSystem {
 
     // Get all active trading signals
     getActiveSignals() {
-        console.log(`Active signals count: ${this.activeSignals}`);
-        return Array.from(this.activeSignals.values());
+        const signals = Array.from(this.activeSignals.values());
+        console.log(`📊 Active signals: ${signals.length} total`);
+        return signals;
     }
 
     // Update signal status

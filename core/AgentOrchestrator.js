@@ -87,99 +87,31 @@ class AgentOrchestrator extends EventEmitter {
     }
 
     setupAgentCommunication() {
-        console.log('🔇 ALL AGENT COMMUNICATION DISABLED');
-        // Market Agent -> Analysis Agent
-        if (this.agents.market && this.agents.analysis) {
-            this.agents.market.on('priceUpdate', (data) => {
-                // Trigger analysis when significant price changes occur
-                if (Math.abs(data.change24h) > 2) {
-                    const coinId = this.convertSymbolToCoinId(data.symbol);
-                    if (this.agents.analysis.analyzeAndAlert) {
-                        this.agents.analysis.analyzeAndAlert(coinId, false);
-                    }
-                }
-            });
+        console.log('🔇 Optimized agent communication (rate limit safe)');
 
-            this.agents.market.on('marketDataUpdate', (data) => {
-                // Update analysis agent with new market data
-                if (this.agents.analysis.updateMarketData) {
-                    this.agents.analysis.updateMarketData(data);
-                }
-            });
-        }
+        // ✅ REMOVED: Market Agent -> Analysis Agent (too many triggers)
+        // Market data updates are now manual only
 
-        // News Agent -> Analysis Agent
-        if (this.agents.news && this.agents.analysis) {
-            this.agents.news.on('marketNews', (news) => {
-                try {
-                    if (this.agents.analysis.handleNewsUpdate) {
-                        console.log('📰 Processing news update for analysis');
-                        this.agents.analysis.handleNewsUpdate(news);
-                    }
-                } catch (error) {
-                    console.error('❌ Error in news update handler:', error);
-                }
-            });
-        }
+        // ✅ REMOVED: News Agent (runs independently)
 
-        // Analysis Agent -> Risk Manager -> Trading Agent
-        if (this.agents.analysis && this.agents.risk) {
-            this.agents.analysis.on('tradingSignal', (signal) => {
-                try {
-                    console.log('📊 Received trading signal, validating risk...');
-                    this.agents.risk.handleEvent('validateSignal', signal);
-                } catch (error) {
-                    console.error('❌ Error in trading signal handler:', error);
-                }
-            });
-        }
-
-        // Analysis -> Trading
+        // ✅ KEPT: Analysis -> Trading (essential)
         if (this.agents.analysis && this.agents.trading) {
             this.agents.analysis.on('tradingSignal', async (signal) => {
-                console.log('🎯 AUTO TRADE SIGNAL RECEIVED:', signal);
-
-                // Validate signal quality
                 if (signal.confidence >= 0.75) {
                     const result = await this.agents.trading.executeSignal(signal);
-                    console.log('🔍 Signal validation passed:', signal);
-                    console.log('Result trading: ', result);
-
-                    if (result && result.success) {
-                        console.log('✅ AUTO TRADE EXECUTED:', result.order);
-
-                        // Send immediate notification
-                        const message = `🚀 <b>AUTO TRADE EXECUTED</b>\n\n` +
-                            `🪙 <b>Coin:</b> ${signal.coin.toUpperCase()}\n` +
-                            `🎯 <b>Action:</b> ${signal.action}\n` +
-                            `💰 <b>Price:</b> $${result.order.price}\n` +
-                            `📊 <b>Amount:</b> ${result.order.amount}\n` +
-                            `🎖️ <b>Confidence:</b> ${(signal.confidence * 100).toFixed(0)}%\n` +
-                            `⏰ <b>Time:</b> ${new Date().toLocaleString()}`;
-
-                        if (this.agents.analysis.sendTelegramMessage) {
-                            await this.agents.analysis.sendTelegramMessage(message);
-                        }
-                    } else {
-                        console.log('❌ AUTO TRADE FAILED:', result?.error);
+                    if (result?.success) {
+                        console.log('✅ AUTO TRADE:', result.order.symbol);
                     }
-                } else {
-                    console.log(`⚠️ Signal rejected - low confidence: ${(signal.confidence * 100).toFixed(0)}%`);
                 }
             });
         }
 
-
-        // Telegram Messaging
+        // ✅ KEPT: Telegram messaging
         if (this.agents.trading) {
             this.agents.trading.on('sendTelegramMessage', (message) => {
-                if (this.agents.analysis && this.agents.analysis.sendTelegramMessage) {
+                if (this.agents.analysis?.sendTelegramMessage) {
                     this.agents.analysis.sendTelegramMessage(message);
                 }
-            });
-
-            this.agents.trading.on('orderExecuted', (order) => {
-                console.log('📋 Order executed:', order);
             });
         }
     }
@@ -229,26 +161,55 @@ class AgentOrchestrator extends EventEmitter {
     }
 
     async startAllAgents() {
-        const startOrder = ['market', 'news', 'risk', 'trading', 'analysis'];
+        const startOrder = ['market', 'risk', 'trading', 'news', 'analysis'];
 
         for (const agentName of startOrder) {
             const agent = this.agents[agentName];
             try {
                 if (agentName === 'analysis') {
-                    // For your existing AnalysisAgent singleton
+                    // Analysis agent singleton
                     if (agent && agent.start) {
-                        await agent.start();
+                        const result = await agent.start();
+                        if (result?.success !== false) {
+                            console.log(`✅ ${agentName} agent started`);
+                        } else {
+                            console.warn(`⚠️ ${agentName} agent start failed: ${result?.error}`);
+                        }
                     }
                 } else if (agent && agent.start) {
-                    await agent.start(this.config);
+                    const result = await agent.start(this.config);
+                    if (result?.success !== false) {
+                        console.log(`✅ ${agentName} agent started`);
+                    } else {
+                        console.warn(`⚠️ ${agentName} agent start failed: ${result?.error}`);
+                    }
+                } else {
+                    console.warn(`⚠️ ${agentName} agent not found or no start method`);
                 }
-                console.log(`✅ ${agentName} agent started`);
             } catch (error) {
-                console.error(`❌ Failed to start ${agentName} agent:`, error);
-                // Don't throw error, continue with other agents
+                console.error(`❌ Failed to start ${agentName} agent:`, error.message);
+                // Continue to next agent instead of stopping
             }
         }
+
         this.isRunning = true;
+        console.log('\n🎉 All agents initialization complete!');
+        this.printAgentStatus();
+    }
+
+    printAgentStatus() {
+        console.log('\n📊 Agent Status Summary:');
+        console.log('─'.repeat(50));
+
+        for (const [name, agent] of Object.entries(this.agents)) {
+            const status = agent.getStatus ? agent.getStatus() : {
+                isRunning: false
+            };
+            const icon = status.isRunning ? '✅' : '❌';
+            console.log(`${icon} ${name.padEnd(15)} - ${status.isRunning ? 'Running' : 'Stopped'}`);
+        }
+
+        console.log('─'.repeat(50) + '\n');
     }
 
     async stop() {

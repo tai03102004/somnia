@@ -1,25 +1,22 @@
 import {
     fileURLToPath
 } from 'url';
-
 import {
     spawn
 } from 'child_process';
-
 import path from 'path';
-
-import coinGeckoService from './CoinGecko.service.js';
-
-
+import binancePriceService from './BinancePrice.service.js';
 
 const __filename = fileURLToPath(
     import.meta.url);
-const __dirname = path.dirname(__filename)
+const __dirname = path.dirname(__filename);
+
 class TechnicalAnalysisService {
     constructor() {
         this.pythonScriptPath = path.join(__dirname, '../python/technical_indicators.py');
         this.pythonBinPath = path.join(__dirname, '../python/venv/bin/python3');
         this.priceCache = new Map();
+        this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
     }
 
     async runPythonScript(prices, indicator, volumes = null, highs = null, lows = null) {
@@ -34,7 +31,6 @@ class TechnicalAnalysisService {
             if (highs) args.push(JSON.stringify(highs));
             if (lows) args.push(JSON.stringify(lows));
 
-            // ✅ Gọi đúng Python trong virtual env
             const pythonProcess = spawn(this.pythonBinPath, args);
 
             let result = '';
@@ -59,79 +55,65 @@ class TechnicalAnalysisService {
     }
 
     async getPriceData(symbol) {
-        // try {
+        if (!symbol) {
+            throw new Error('Symbol is required');
+        }
+
+        // Check cache first
         if (this.priceCache.has(symbol)) {
             const cachedData = this.priceCache.get(symbol);
-            if (Date.now() - cachedData.timestamp < 3600000) {
+            const age = Date.now() - cachedData.timestamp;
+
+            if (age < this.cacheTimeout) {
+                console.log(`✅ Price cache HIT for ${symbol} (age: ${Math.round(age/1000)}s)`);
                 return cachedData.data;
             } else {
-                console.log(`🔄 Cập nhật cache cho ${symbol}`)
+                console.log(`🔄 Cache expired for ${symbol}, refreshing...`);
                 this.priceCache.delete(symbol);
             }
         }
 
-        const infoCoin = await coinGeckoService.getAllInfoCoin([symbol]);
-        const priceCoin = await coinGeckoService.getHistoricalDataForCoins([symbol], 100);
-        const prices = priceCoin.data[symbol].prices.map(([_, price]) => price);
-        const totalVolume = priceCoin.data[symbol].prices.map(([_, total_volumes]) => total_volumes);
+        console.log(`🚀 Fetching fresh price data from Binance for ${symbol}...`);
 
-        const dataCoin = {};
-
-        for (let i = 0; i < infoCoin.length; i++) {
-            const coin = infoCoin[i];
-            dataCoin[symbol] = {
-                current_price: coin.current_price,
-                volumes: totalVolume,
-                highs: coin.high_24h,
-                lows: coin.low_24h,
-                prices: prices
-            }
-        }
-
-        this.priceCache.set(symbol, {
-            data: dataCoin,
-            timestamp: Date.now()
-        });
-
-        return dataCoin;
-
-        // } catch (error) {
-        //     throw new Error(`Lỗi lấy dữ liệu giá: ${error.message}`);
-        // }
-    }
-
-    /**
-     * Calculating single technical indicator
-     * @param {string} symbol - Coin symbol
-     * @param {string} indicator - Technical indicator name
-     * @returns {Promise<Object>} - Calculation result
-     * */
-    async calculateSingleIndicator(symbol, indicator) {
         try {
-            const priceData = await this.getPriceData(symbol);
+            // ✅ Use Binance for INSTANT data
+            const [currentInfo, historicalData] = await Promise.all([
+                binancePriceService.getCurrentPrice(symbol),
+                binancePriceService.getHistoricalData(symbol, 100)
+            ]);
 
-            const result = await this.runPythonScript(
-                priceData.prices,
-                indicator,
-                priceData.volumes,
-                priceData.highs,
-                priceData.lows
-            );
+            const dataCoin = {
+                [symbol]: {
+                    current_price: currentInfo.price,
+                    volumes: historicalData.volumes,
+                    highs: currentInfo.high24h,
+                    lows: currentInfo.low24h,
+                    prices: historicalData.prices
+                }
+            };
 
-            return result;
+            this.priceCache.set(symbol, {
+                data: dataCoin,
+                timestamp: Date.now()
+            });
+
+            return dataCoin;
         } catch (error) {
-            throw new Error(`Lỗi tính ${indicator}: ${error.message}`);
+            console.error(`❌ Failed to fetch price data for ${symbol}:`, error.message);
+            throw error;
         }
     }
 
-    /**
-     * Calculate all technical indicators
-     * @param {string} symbol - Coin symbol
-     * @returns {Promise<Object>} - Calculation result
-     * */
     async calculateAllIndicators(symbol) {
-        // try {
+        if (!symbol) {
+            throw new Error('Symbol is required for technical analysis');
+        }
+
         const priceData = await this.getPriceData(symbol);
+
+        if (!priceData[symbol]) {
+            throw new Error(`No price data found for ${symbol}`);
+        }
 
         const result = await this.runPythonScript(
             priceData[symbol].prices,
@@ -142,25 +124,17 @@ class TechnicalAnalysisService {
         );
 
         return result;
-        // } catch (error) {
-        //     throw new Error(`Error calculating all indicators: ${error.message}`);
-        // }
     }
-
-    async getSingleIndicator(symbol, indicator) {
-        try {
-            const result = await this.calculateSingleIndicator(symbol, indicator);
-            return result;
-        } catch (error) {
-            console.error(`Eror getSingleIndicator ${indicator} with ${symbol}:`, error);
-            throw error;
-        }
-    }
-
 
     async getTechnicalIndicators(symbol) {
+        if (!symbol) {
+            console.error('❌ Symbol is undefined or null');
+            throw new Error('Symbol is required');
+        }
+
         try {
             const allIndicators = await this.calculateAllIndicators(symbol);
+
             if (allIndicators.error) {
                 throw new Error(allIndicators.error);
             }
@@ -210,7 +184,7 @@ class TechnicalAnalysisService {
                     message: allIndicators.stochastic?.message || ''
                 },
 
-                // Tổng hợp
+                // Summary
                 summary: allIndicators.summary || {
                     overall_signal: 'NEUTRAL',
                     recommendation: 'Quan sát thêm',
@@ -225,28 +199,10 @@ class TechnicalAnalysisService {
             return formattedResult;
 
         } catch (error) {
-            console.error(`Error getTechnicalIndicators with ${symbol}:`, error);
-
-            // Fallback Data if error occurs
-            return {
-                rsi: Math.floor(Math.random() * 100),
-                macd: (Math.random() - 0.5) * 10,
-                ema: Math.floor(Math.random() * 50000),
-                volume: Math.floor(Math.random() * 1000000000),
-                bollinger: {
-                    upper: Math.floor(Math.random() * 60000),
-                    lower: Math.floor(Math.random() * 40000)
-                },
-                sma: Math.floor(Math.random() * 45000),
-                stochastic: {
-                    k: Math.floor(Math.random() * 100),
-                    d: Math.floor(Math.random() * 100)
-                },
-                error: error.message
-            };
+            console.error(`❌ Error getTechnicalIndicators for ${symbol}:`, error);
+            throw error;
         }
     }
-
 }
 
 export default new TechnicalAnalysisService();

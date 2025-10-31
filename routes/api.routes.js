@@ -4,7 +4,7 @@ import blockchainConnector from '../services/BlockchainConnector.service.js';
 const router = express.Router();
 
 // Health check
-router.get('/health', (req, res) => {
+router.get('/health', async (req, res) => {
     try {
         const orchestrator = req.app.get('orchestrator');
 
@@ -36,6 +36,7 @@ router.get('/health', (req, res) => {
 router.get('/market/status', async (req, res) => {
     try {
         const orchestrator = req.app.get('orchestrator');
+        console.log("Agent analysis: ", orchestrator.agents)
 
         if (!orchestrator || !orchestrator.agents?.analysis) {
             return res.status(503).json({
@@ -52,7 +53,7 @@ router.get('/market/status', async (req, res) => {
     }
 });
 
-router.get('/market/signals', (req, res) => {
+router.get('/market/signals', async (req, res) => {
     try {
         const orchestrator = req.app.get('orchestrator');
 
@@ -75,7 +76,7 @@ router.get('/market/signals', (req, res) => {
 });
 
 // Trading endpoints
-router.get('/trading/portfolio', (req, res) => {
+router.get('/trading/portfolio', async (req, res) => {
     try {
         const orchestrator = req.app.get('orchestrator');
 
@@ -97,7 +98,7 @@ router.get('/trading/portfolio', (req, res) => {
     }
 });
 
-router.get('/trading/history', (req, res) => {
+router.get('/trading/history', async (req, res) => {
     try {
         const orchestrator = req.app.get('orchestrator');
 
@@ -143,29 +144,52 @@ router.get('/trading/balance', async (req, res) => {
 
 // Analysis endpoints
 router.post('/analysis/trigger', async (req, res) => {
-    try {
-        const {
-            coin
-        } = req.body;
-        const orchestrator = req.app.get('orchestrator');
+    // try {
+    const {
+        coin
+    } = req.body;
 
-        if (!orchestrator || !orchestrator.agents?.analysis) {
-            return res.status(503).json({
-                error: 'Analysis agent not available'
-            });
-        }
-
-        const result = await orchestrator.agents.analysis.analyzeAndAlert(coin, true);
-        res.json(result);
-    } catch (error) {
-        res.status(500).json({
-            error: error.message
+    // ✅ Validate input
+    if (!coin || typeof coin !== 'string' || coin.trim() === '') {
+        return res.status(400).json({
+            success: false,
+            error: 'Valid coin symbol is required (e.g., "bitcoin" or "ethereum")'
         });
     }
+
+    const orchestrator = req.app.get('orchestrator');
+
+    if (!orchestrator || !orchestrator.agents?.analysis) {
+        return res.status(503).json({
+            success: false,
+            error: 'Analysis agent not available'
+        });
+    }
+
+    // ✅ Normalize coin symbol
+    const normalizedCoin = coin.trim().toLowerCase();
+
+    // ✅ Check if coin is supported
+    const supportedCoins = ['bitcoin', 'ethereum'];
+    if (!supportedCoins.includes(normalizedCoin)) {
+        return res.status(400).json({
+            success: false,
+            error: `Unsupported coin. Supported: ${supportedCoins.join(', ')}`
+        });
+    }
+
+    const result = await orchestrator.agents.analysis.analyzeAndAlert(normalizedCoin, true);
+    res.json(result);
+    // } catch (error) {
+    //     res.status(500).json({
+    //         success: false,
+    //         error: error.message
+    //     });
+    // }
 });
 
 // Blockchain endpoints
-router.get('/blockchain/status', (req, res) => {
+router.get('/blockchain/status', async (req, res) => {
     try {
         const status = blockchainConnector.getStatus();
         res.json({

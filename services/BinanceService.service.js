@@ -75,30 +75,6 @@ class BinanceLiveTrading {
                 balances: accountData.balances.filter(b => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0)
             };
 
-            console.log('\n🔍 ==================== BINANCE ACCOUNT INFO ====================');
-            console.log('👤 Account Type:', this.accountInfo.accountType);
-            console.log('📊 Trading Enabled:', this.accountInfo.canTrade);
-            console.log('💸 Withdraw Enabled:', this.accountInfo.canWithdraw);
-            console.log('💰 Deposit Enabled:', this.accountInfo.canDeposit);
-            console.log('🔑 Permissions:', this.accountInfo.permissions);
-            console.log('⏰ Last Update:', this.accountInfo.updateTime.toLocaleString());
-            console.log('🌐 Testnet Mode:', process.env.BINANCE_TESTNET === 'true' ? 'YES' : 'NO');
-
-            console.log('\n💰 ==================== ACCOUNT BALANCES ====================');
-            this.accountInfo.balances
-                .filter(balance => ['ETH', 'BTC'].includes(balance.asset))
-                .forEach(balance => {
-                    const free = parseFloat(balance.free);
-                    const locked = parseFloat(balance.locked);
-                    const total = free + locked;
-
-                    if (total > 0) {
-                        console.log(`${balance.asset.padEnd(8)} | Free: ${free.toFixed(8)} | Locked: ${locked.toFixed(8)} | Total: ${total.toFixed(8)}`);
-                    }
-                });
-
-            console.log('===============================================================\n');
-
             return this.accountInfo;
 
         } catch (error) {
@@ -117,27 +93,17 @@ class BinanceLiveTrading {
             throw new Error(`Invalid amountUSD: ${amountUSD}`);
         }
 
-        console.log('>>>>> DEBUG ORDER PARAMS <<<<<');
-        console.log('Symbol:', symbol);
-        console.log('Side:', side);
-        console.log('Amount (USD):', amountUSD, typeof amountUSD);
 
         // Fetch ticker price
         const ticker = await this.exchange.fetchTicker(symbol);
         const price = ticker.last;
 
-        console.log('Fetched price for', symbol, '=>', price);
-
         // Tính toán amount theo đơn vị "base" (ví dụ BTC nếu BTC/USDT)
         const amountBase = amountUSD / price;
-
-        console.log('Calculated base amount:', amountBase);
 
         // Check tối thiểu Binance yêu cầu (tùy cặp coin, thường >10 USDT)
         const market = await this.exchange.loadMarkets();
         const minNotional = market[symbol]?.limits?.cost?.min || 10;
-
-        console.log('Minimum notional for', symbol, '=', minNotional);
 
         if (amountUSD < minNotional) {
             throw new Error(`Order notional ($${amountUSD}) is below minimum ($${minNotional})`);
@@ -150,8 +116,6 @@ class BinanceLiveTrading {
             side,
             this.exchange.amountToPrecision(symbol, amountBase)
         );
-
-        console.log('✅ Live order created:', order);
 
         return {
             success: true,
@@ -176,13 +140,6 @@ class BinanceLiveTrading {
     async getAccountBalance() {
         try {
             const balance = await this.exchange.fetchBalance();
-
-            // Log current balance info
-            console.log('\n💰 ==================== CURRENT BALANCE ====================');
-            console.log('USDT Total:', balance.USDT?.total || 0);
-            console.log('BTC Free:', balance.BTC?.free || 0);
-            console.log('ETH Free:', balance.ETH?.free || 0);
-            console.log('===========================================================\n');
 
             return {
                 USDT: balance.USDT?.free || 0,

@@ -1,6 +1,5 @@
 import EventEmitter from 'events';
 import WebSocket from 'ws';
-import CoinGeckoService from '../services/CoinGecko.service.js';
 
 class MarketAgent extends EventEmitter {
     constructor() {
@@ -16,9 +15,8 @@ class MarketAgent extends EventEmitter {
         this.isRunning = true;
 
         await this.setupWebSocketConnections();
-        this.setupPeriodicCollection();
 
-        console.log('🌐 Market Agent started');
+        console.log('🌐 Market Agent started (WebSocket only)');
     }
 
     async setupWebSocketConnections() {
@@ -50,37 +48,13 @@ class MarketAgent extends EventEmitter {
             change24h: parseFloat(ticker.p),
             volume: parseFloat(ticker.v),
             timestamp: Date.now()
-        }
+        };
 
         this.priceCache.set(symbol, priceData);
-
         this.emit('priceUpdate', priceData);
 
         if (Math.abs(priceData.change24h) > 5) {
             this.emit('significantPriceMove', priceData);
-        }
-    }
-
-    setupPeriodicCollection() {
-        this.marketDataInterval = setInterval(async () => {
-            await this.collectDetailedMarketData();
-        }, 5 * 60 * 1000);
-    }
-
-    async collectDetailedMarketData() {
-        try {
-            const symbols = this.config.symbols || ['bitcoin', 'ethereum'];
-            const marketData = await CoinGeckoService.getCryptoPrices(symbols);
-
-            for (const [symbol, data] of Object.entries(marketData)) {
-                this.emit('marketDataUpdate', {
-                    symbol,
-                    data,
-                    timestamp: Date.now()
-                });
-            }
-        } catch (error) {
-            console.error('❌ Error collecting market data:', error);
         }
     }
 
@@ -89,18 +63,13 @@ class MarketAgent extends EventEmitter {
             isRunning: this.isRunning,
             activeConnections: this.connections.size,
             cachedPrices: this.priceCache.size,
-            lastUpdated: Date.now(),
-        }
+            lastUpdated: Date.now()
+        };
     }
 
     stop() {
         this.connections.forEach(ws => ws.close());
         this.connections.clear();
-
-        if (this.marketDataInterval) {
-            clearInterval(this.marketDataInterval);
-            this.marketDataInterval = null;
-        }
         this.isRunning = false;
         console.log('🌐 Market Agent stopped');
     }

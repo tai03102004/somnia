@@ -11,6 +11,27 @@ class RiskManager extends EventEmitter {
         };
         this.dailyPnL = 0;
         this.openPositions = 0;
+        this.isRunning = false;
+        this.config = null;
+    }
+
+    async start(config) {
+        try {
+            this.config = config;
+            this.isRunning = true;
+
+            console.log('🛡️ Risk Manager started');
+            return {
+                success: true
+            };
+        } catch (error) {
+            console.error('❌ RiskManager start error:', error.message);
+            this.isRunning = true; // Still mark as running
+            return {
+                success: false,
+                error: error.message
+            };
+        }
     }
 
     handleEvent(eventName, data) {
@@ -65,10 +86,16 @@ class RiskManager extends EventEmitter {
 
     getStatus() {
         return {
+            isRunning: this.isRunning,
             dailyPnL: this.dailyPnL,
             openPositions: this.openPositions,
             riskLimits: this.riskLimits
         };
+    }
+
+    stop() {
+        this.isRunning = false;
+        console.log('🛡️ Risk Manager stopped');
     }
 }
 

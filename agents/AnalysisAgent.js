@@ -5,7 +5,6 @@ import {
     Telegraf
 } from 'telegraf';
 
-import coinGeckoService from '../services/CoinGecko.service.js';
 import technicalIndicators from '../services/TechnicalAnalysis.service.js';
 import AlertSystem from '../services/AlertSystem.service.js';
 import {
@@ -15,6 +14,7 @@ import {
 import EventEmitter from 'events';
 import BinanceLiveTrading from '../services/BinanceService.service.js';
 import blockchainConnector from '../services/BlockchainConnector.service.js';
+import binancePriceService from '../services/BinancePrice.service.js';
 
 /**
  * AI Agent Service Class
@@ -27,7 +27,7 @@ class AIAnalysisAgent extends EventEmitter {
         this.bot = null;
         this.aiAgent = null;
         this.cronJobs = [];
-        this.isRunning = false;
+        this.isRunning = true;
         this.previousPrices = {};
         this.alertSystem = AlertSystem;
         this.orchestrator = null;
@@ -94,117 +94,134 @@ class AIAnalysisAgent extends EventEmitter {
      * @returns {Promise<string>} - Analysis results
      */
     async analyzeWithAI(data) {
-        // try {
-        let enhancedData = data;
-        if (this.lastNewsSentiment) {
-            enhancedData += `\n\nNews Sentiment: ${this.lastNewsSentiment}`;
-        }
-        const enhancedPrompt = `
-                ${this.aiAgent.instructions}
-                
-                Based on the following data, provide:
-                1. Market analysis (consider news sentiment if provided)
-                2. Trading signals (if any) with entry point, stop loss, take profit
-                3. Risk assessment
-                
-                Data: ${enhancedData}
-                
-                Please format the response in **clear, human-readable format** using Markdown. Highlight important sections like:
-
-                ### 🔍 Market Analysis
-                - A brief but insightful analysis of the market trend
-
-                ### 📈 Trading Signals
-                Provide 1–3 trading signals (if applicable). For each signal, include:
-                - **Coin**: The coin symbol (BTC or ETH)
-                - **Action**: One of BUY, SELL, or HOLD
-                - **Confidence**: A number between 0 and 1 (e.g. 0.85)
-                - **Entry Point**: Suggested price to enter
-                - **Stop Loss**: Suggested stop loss price
-                - **Take Profit**: Suggested take profit target
-                - **Reasoning**: Explain why this signal is generated, based on technical indicators or trend
-                
-                **Risk Assessment**
-                - Short bullet points
-
-                **Summary**
-                - Final thoughts or advice
-            `;
-
-        const payload = {
-            model: this.aiAgent.model,
-            messages: [{
-                    role: 'system',
-                    content: enhancedPrompt
-                },
-                {
-                    role: 'user',
-                    content: data
-                }
-            ],
-            max_tokens: 800,
-            temperature: 0.7
-        };
-
-        const response = await axios.post(
-            `${this.aiAgent.baseUrl}/chat/completions`,
-            payload, {
-                headers: this.aiAgent.headers,
-                timeout: 30000
-            }
-        );
-
-        const content = response.data.choices[0].message.content;
-
-        console.log("🔍 AI Analysis Result:", content);
-
-        if (content.includes("### 📈 Trading Signals")) {
-            const signalRegex = /\*\*Action\*\*: (BUY|SELL|HOLD)[\s\S]*?\*\*Confidence\*\*: ([0-9.]+)[\s\S]*?\*\*Entry Point\*\*: \$?([0-9,.]+)[\s\S]*?\*\*Stop Loss\*\*: \$?([0-9,.]+)[\s\S]*?\*\*Take Profit\*\*: \$?([0-9,.]+)[\s\S]*?\*\*Reasoning\*\*: (.+?)(?:\n|$)/g;
-            const matches = [...content.matchAll(signalRegex)];
-            const parsedSignals = matches.map(match => ({
-                coin: match[0].includes('BTC') ? 'bitcoin' : 'ethereum',
-                action: match[1],
-                confidence: parseFloat(match[2]),
-                entryPoint: parseFloat(match[3].replace(/,/g, '')),
-                stopLoss: parseFloat(match[4].replace(/,/g, '')),
-                takeProfit: parseFloat(match[5].replace(/,/g, '')),
-                reasoning: match[6].trim(),
-                timestamp: Date.now()
-            }));
-
-            // ✅ Submit signals to blockchain
-            for (const signal of parsedSignals) {
-                this.emit('tradingSignal', signal);
-
-                // Submit to Somnia blockchain
-                const blockchainResult = await this.blockchainConnector.submitSignal(signal);
-                if (blockchainResult.success) {
-                    console.log(`✅ Signal submitted on-chain: ${blockchainResult.txHash}`);
-                    signal.txHash = blockchainResult.txHash;
-                    signal.blockNumber = blockchainResult.blockNumber;
-                }
+        try {
+            let enhancedData = data;
+            if (this.lastNewsSentiment) {
+                enhancedData += `\n\nNews Sentiment: ${this.lastNewsSentiment}`;
             }
 
-            return {
-                analysis: content,
-                signals: parsedSignals,
-                summary: "Extracted from Markdown"
+            const enhancedPrompt = `
+${this.aiAgent.instructions}
+
+Based on the following data, provide:
+1. Market analysis (consider news sentiment if provided)
+2. Trading signals (if any) with entry point, stop loss, take profit
+3. Risk assessment
+
+Data: ${enhancedData}
+
+Please format the response in **clear, human-readable format** using Markdown. Highlight important sections like:
+
+### 🔍 Market Analysis
+- A brief but insightful analysis of the market trend
+
+### 📈 Trading Signals
+Provide 1–3 trading signals (if applicable). For each signal, include:
+- **Coin**: The coin symbol (BTC or ETH)
+- **Action**: One of BUY, SELL, or HOLD
+- **Confidence**: A number between 0 and 1 (e.g. 0.85)
+- **Entry Point**: Suggested price to enter
+- **Stop Loss**: Suggested stop loss price
+- **Take Profit**: Suggested take profit target
+- **Reasoning**: Explain why this signal is generated, based on technical indicators or trend
+
+**Risk Assessment**
+- Short bullet points
+
+**Summary**
+- Final thoughts or advice
+            `.trim();
+
+            const apiUrl = `${this.aiAgent.baseUrl}/models/${this.aiAgent.model}:generateContent`;
+
+            const payload = {
+                contents: [{
+                    parts: [{
+                        text: `${enhancedPrompt}\n\n${data}`
+                    }]
+                }],
+                generationConfig: {
+                    temperature: 0.7,
+                    topK: 40,
+                    topP: 0.95,
+                    maxOutputTokens: 1024
+                }
             };
-        } else {
+
+            console.log(`🤖 Calling Gemini API: ${apiUrl}`);
+
+            // ✅ FIX: Use X-goog-api-key header instead of query param
+            const response = await axios.post(apiUrl, payload, {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-goog-api-key': this.aiAgent.apiKey
+                },
+                timeout: 30000
+            });
+
+            // ✅ Parse Gemini 2.0 response
+            const content = response.data?.candidates?. [0]?.content?.parts?. [0]?.text ||
+                'No analysis generated';
+
+            console.log("🔍 AI Analysis Result (first 200 chars):", content.substring(0, 200));
+
+            // Parse trading signals
+            if (content.includes("### 📈 Trading Signals") || content.includes("Trading Signals")) {
+                const signalRegex = /\*\*Action\*\*:\s*(BUY|SELL|HOLD)[\s\S]*?\*\*Confidence\*\*:\s*([0-9.]+)[\s\S]*?\*\*Entry Point\*\*:\s*\$?([0-9,.]+)[\s\S]*?\*\*Stop Loss\*\*:\s*\$?([0-9,.]+)[\s\S]*?\*\*Take Profit\*\*:\s*\$?([0-9,.]+)[\s\S]*?\*\*Reasoning\*\*:\s*(.+?)(?:\n\n|$)/g;
+                const matches = [...content.matchAll(signalRegex)];
+
+                const parsedSignals = matches.map(match => ({
+                    coin: match[0].includes('BTC') ? 'bitcoin' : 'ethereum',
+                    action: match[1],
+                    confidence: parseFloat(match[2]),
+                    entryPoint: parseFloat(match[3].replace(/,/g, '')),
+                    stopLoss: parseFloat(match[4].replace(/,/g, '')),
+                    takeProfit: parseFloat(match[5].replace(/,/g, '')),
+                    reasoning: match[6].trim(),
+                    timestamp: Date.now()
+                }));
+
+                console.log(`✅ Parsed ${parsedSignals.length} signals from AI response`);
+
+                // Submit signals to blockchain
+                for (const signal of parsedSignals) {
+                    this.emit('tradingSignal', signal);
+
+                    const blockchainResult = await this.blockchainConnector.submitSignal(signal);
+                    if (blockchainResult.success) {
+                        console.log(`✅ Signal submitted on-chain: ${blockchainResult.txHash}`);
+                        signal.txHash = blockchainResult.txHash;
+                        signal.blockNumber = blockchainResult.blockNumber;
+                    }
+                }
+
+                return {
+                    analysis: content,
+                    signals: parsedSignals,
+                    summary: `Generated ${parsedSignals.length} trading signals`
+                };
+            }
+
             return {
                 analysis: content,
                 signals: [],
-                summary: "Extracted from Markdown"
+                summary: "No trading signals generated"
+            };
+
+        } catch (error) {
+            console.error('❌ AI Analysis Error:', error.message);
+            if (error.response) {
+                console.error('API Response Status:', error.response.status);
+                console.error('API Response Data:', JSON.stringify(error.response.data, null, 2));
+            }
+
+            // Return empty result instead of throwing
+            return {
+                analysis: `AI Analysis Error: ${error.message}. System will continue without AI signals.`,
+                signals: [],
+                summary: 'Analysis failed - check logs for details'
             };
         }
-        // } catch (error) {
-        //     console.error('❌ AI Analysis Error:', error.message);
-        //     return {
-        //         analysis: 'Error in AI analysis',
-        //         signals: [],
-        //         summary: 'Analysis failed'
-        //     };
-        // }
     }
 
     /**
@@ -300,30 +317,50 @@ class AIAnalysisAgent extends EventEmitter {
      * @param {boolean} forceAlert - Force alert sending
      */
     async analyzeAndAlert(symbol, forceAlert = false) {
-        // try {
-        // const marketData = await this.getMarketData(symbol);
+        // ✅ FIX: Validate symbol first
+        if (!symbol || typeof symbol !== 'string' || symbol.trim() === '') {
+            console.error('❌ Invalid symbol provided:', symbol);
+            return {
+                success: false,
+                error: 'Valid symbol is required'
+            };
+        }
 
-        const [priceData, techData] = await Promise.all([
-            coinGeckoService.getCryptoPrices([symbol]),
-            technicalIndicators.getTechnicalIndicators(symbol)
-        ]);
+        // ✅ Normalize symbol
+        symbol = symbol.trim().toLowerCase();
+        console.log(`🔍 Starting analysis for: ${symbol}`);
 
-        const currentPrice = priceData[symbol].usd;
-        const previousPrice = this.previousPrices[symbol];
+        try {
+            // ✅ Use Binance ONLY (no CoinGecko)
+            const [priceData, techData] = await Promise.all([
+                binancePriceService.getCryptoPrices([symbol]),
+                technicalIndicators.getTechnicalIndicators(symbol)
+            ]);
 
+            // ✅ Validate price data
+            if (!priceData || !priceData[symbol]) {
+                throw new Error(`No price data available for ${symbol}`);
+            }
 
-        const alerts = this.alertSystem.checkAlerts(
-            symbol,
-            priceData[symbol],
-            previousPrice ? {
-                usd: previousPrice
-            } : null,
-            techData,
-        );
+            const currentPrice = priceData[symbol].usd;
+            if (!currentPrice || isNaN(currentPrice)) {
+                throw new Error(`Invalid price for ${symbol}: ${currentPrice}`);
+            }
 
-        console.log(`Alerts for ${symbol}:`, alerts);
+            const previousPrice = this.previousPrices[symbol];
 
-        const analysisData = `
+            const alerts = this.alertSystem.checkAlerts(
+                symbol,
+                priceData[symbol],
+                previousPrice ? {
+                    usd: previousPrice
+                } : null,
+                techData
+            );
+
+            console.log(`📊 Alerts for ${symbol}: ${alerts.length}`);
+
+            const analysisData = `
                 Analyze ${symbol.toUpperCase()}:
                 - Current Price: $${currentPrice.toFixed(2)}
                 - 24h Change: ${priceData[symbol].usd_24h_change.toFixed(2)}%
@@ -334,55 +371,59 @@ class AIAnalysisAgent extends EventEmitter {
                 Provide analysis and trading recommendations.
             `;
 
-        const aiResult = await this.analyzeWithAI(analysisData);
-        if (aiResult.signals && aiResult.signals.length > 0) {
-            const tradingSignals = aiResult.signals.map(signal => ({
-                coin: symbol,
-                action: signal.action,
-                confidence: signal.confidence,
-                entryPoint: signal.entryPoint,
-                stopLoss: signal.stopLoss,
-                takeProfit: signal.takeProfit,
-                timestamp: new Date(),
-                analysis: aiResult.analysis
-            }));
-            this.alertSystem.setTradingSignals(tradingSignals);
-            tradingSignals.forEach(signal => {
-                console.log(`📤 Emitting trading signal: ${signal.action} ${signal.coin} (confidence: ${signal.confidence})`);
-                this.emit('tradingSignal', signal);
-            });
-        }
-        const shouldAlert = forceAlert ||
-            alerts.length > 0 ||
-            (aiResult.signals && aiResult.signals.length > 0) ||
-            Math.abs(priceData[symbol].usd_24h_change) > 5;
+            const aiResult = await this.analyzeWithAI(analysisData);
 
-        if (shouldAlert) {
-            const alertMessage = this.formatAlertMessage(symbol, priceData, techData, aiResult, alerts);
-            await this.sendTelegramMessage(alertMessage);
-            this.previousPrices[symbol] = currentPrice;
+            if (aiResult.signals && aiResult.signals.length > 0) {
+                const tradingSignals = aiResult.signals.map(signal => ({
+                    coin: symbol,
+                    action: signal.action,
+                    confidence: signal.confidence,
+                    entryPoint: signal.entryPoint,
+                    stopLoss: signal.stopLoss,
+                    takeProfit: signal.takeProfit,
+                    timestamp: new Date(),
+                    analysis: aiResult.analysis
+                }));
 
-            console.log(`✅ Alert sent for ${symbol} (${alerts.length} alerts, ${aiResult.signals?.length || 0} signals)`);
-            return {
-                success: true,
-                message: 'Alert sent successfully',
-                alertCount: alerts.length,
-                signalCount: aiResult.signals?.length || 0
-            };
-        } else {
-            console.log(`ℹ️ No alert needed for ${symbol}`);
+                this.alertSystem.setTradingSignals(tradingSignals);
+
+                tradingSignals.forEach(signal => {
+                    console.log(`📤 Emitting signal: ${signal.action} ${signal.coin} (${(signal.confidence * 100).toFixed(0)}%)`);
+                    this.emit('tradingSignal', signal);
+                });
+            }
+
+            const shouldAlert = forceAlert ||
+                alerts.length > 0 ||
+                (aiResult.signals && aiResult.signals.length > 0) ||
+                Math.abs(priceData[symbol].usd_24h_change) > 5;
+
+            if (shouldAlert) {
+                const alertMessage = this.formatAlertMessage(symbol, priceData, techData, aiResult, alerts);
+                await this.sendTelegramMessage(alertMessage);
+                this.previousPrices[symbol] = currentPrice;
+
+                console.log(`✅ Alert sent for ${symbol}`);
+                return {
+                    success: true,
+                    message: 'Alert sent successfully',
+                    alertCount: alerts.length,
+                    signalCount: aiResult.signals?.length || 0
+                };
+            } else {
+                console.log(`ℹ️ No alert needed for ${symbol}`);
+                return {
+                    success: false,
+                    message: 'No alert needed'
+                };
+            }
+        } catch (error) {
+            console.error(`❌ Error analyzing ${symbol}:`, error.message);
             return {
                 success: false,
-                message: 'No alert needed'
+                error: error.message
             };
         }
-        // } catch (error) {
-        //     console.error(`❌ Error analyzing ${symbol}:`, error.message);
-        //     return {
-        //         success: false,
-        //         error: error.message
-        //     };
-        // }
     }
 
     /**
@@ -401,31 +442,29 @@ class AIAnalysisAgent extends EventEmitter {
      */
     async getMarketStatus() {
         try {
-            const results = await Promise.all(
-                this.config.supportedCoins.map(coin => coinGeckoService.getCryptoPrices([coin]))
-            );
+            // ✅ Use Binance for instant response
+            const marketData = await binancePriceService.getCryptoPrices(this.config.supportedCoins);
 
-            const marketData = {};
-            results.forEach((data, index) => {
-                const coin = this.config.supportedCoins[index];
-                marketData[coin] = {
-                    price: data[coin].usd,
-                    change24h: data[coin].usd_24h_change,
-                    volume: data[coin].usd_24h_vol,
-                    marketCap: data[coin].usd_market_cap
+            const formatted = {};
+            for (const [coin, data] of Object.entries(marketData)) {
+                formatted[coin] = {
+                    price: data.usd,
+                    change24h: data.usd_24h_change,
+                    volume: data.usd_24h_vol,
+                    marketCap: data.usd_market_cap
                 };
-            });
+            }
 
             const activeSignals = this.alertSystem.getActiveSignals();
 
             return {
                 success: true,
-                data: marketData,
+                data: formatted,
                 activeSignals: activeSignals.length,
                 signals: activeSignals
             };
         } catch (error) {
-            console.error('❌ Error getting market status:', error.message);
+            console.error('❌ Error getting market status:', error);
             return {
                 success: false,
                 error: error.message
@@ -443,38 +482,24 @@ class AIAnalysisAgent extends EventEmitter {
             return;
         }
 
-        console.log('📅 Setting up autonomous analysis scheduler...');
+        console.log('📅 Setting up optimized scheduler...');
 
-        // Main analysis every 15 minutes
-        const mainJob = cron.schedule('*/15 * * * *', async () => {
-            console.log('🔄 Scheduled autonomous analysis...');
+        // ✅ Reduced to 30 minutes (CoinGecko rate limit friendly)
+        const mainJob = cron.schedule('*/30 * * * *', async () => {
+            console.log('🔄 Scheduled analysis (30min interval)...');
             for (const coin of this.config.supportedCoins) {
                 await this.analyzeAndAlert(coin);
-                await new Promise(resolve => setTimeout(resolve, 5000)); // 5s between coins
+                await new Promise(resolve => setTimeout(resolve, 75000)); // 75s between coins
             }
         });
 
-        // Quick market check every 5 minutes
-        const quickJob = cron.schedule('*/5 * * * *', async () => {
-            console.log('⚡ Quick market health check...');
-            const marketStatus = await this.getMarketStatus();
-            if (marketStatus.success && marketStatus.signals.length > 0) {
-                console.log(`📊 ${marketStatus.signals.length} active signals detected`);
-            }
-        });
-
-        this.cronJobs = [mainJob, quickJob];
+        // ✅ Removed quick check to reduce API calls
+        this.cronJobs = [mainJob];
+        console.log('✅ Scheduler: 30min interval, no quick checks');
     }
 
     async start() {
         try {
-            if (this.isRunning) {
-                console.log('⚠️ Service is runing');
-                return {
-                    success: false,
-                    message: 'Service is running'
-                };
-            }
 
             if (!this.config) {
                 throw new Error('Configuration not initialized. Call init() first');
