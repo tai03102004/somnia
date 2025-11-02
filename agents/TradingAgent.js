@@ -135,13 +135,9 @@ class TradingAgent extends EventEmitter {
     // ✨ LIVE BINANCE TRADING
     async executeLiveOrder(symbol, side, amount, signal) {
         try {
-            if (!symbol || !side || !amount || amount <= 0) {
-                throw new Error(`Invalid parameters: symbol=${symbol}, side=${side}, amount=${amount}`);
-            }
-
-            if (!this.binanceLive || !this.binanceLive.exchange) {
-                throw new Error('Binance exchange not initialized');
-            }
+            console.log(`🚀 LIVE TRADE: ${side.toUpperCase()} ${symbol} - $${amount}`);
+            const preTradeBalance = await this.binanceLive.getAccountBalance();
+            console.log(`💰 Pre-trade USDT: ${preTradeBalance.USDT.free}`);
 
             console.log(`🚀 LIVE TRADE: ${side.toUpperCase()} ${symbol} - $${amount}`);
 
@@ -159,25 +155,51 @@ class TradingAgent extends EventEmitter {
                 price: result.price || 0,
                 timestamp: Date.now(),
                 mode: 'LIVE',
+
+                // ✅ Add execution details
+                executionTime: result.executionTime || 0,
+                commission: result.commission || 0,
+
+                // ✅ Add signal details
+                signalConfidence: signal.confidence || 0,
+                entryPoint: signal.entryPoint || result.price,
+                stopLoss: signal.stopLoss || 0,
+                takeProfit: signal.takeProfit || 0,
+                reasoning: signal.reasoning || '',
+
+                // ✅ Add LSTM prediction
+                lstmPrediction: signal.lstmPrediction ? {
+                    nextPrice: signal.lstmPrediction.nextPrice,
+                    trend: signal.lstmPrediction.trend,
+                    confidence: signal.lstmPrediction.confidence
+                } : null,
+
+                txHash: null,
+
+                pnl: null,
+                pnlPercentage: null,
+                exitPrice: null,
+                exitTime: null,
+                status: side === 'buy' ? 'OPEN' : 'CLOSED'
             };
 
             this.orderHistory.push(order);
             this.tradingStats.totalTrades++;
+            try {
+                const txHash = await this.blockchainConnector.executeTrade({
+                    symbol: symbol,
+                    side: side,
+                    amount: amount,
+                    price: result.price,
+                    timestamp: Date.now()
+                });
 
-            // Submit trade to blockchain (non-blocking)
-            this.blockchainConnector.executeTrade({
-                    symbol,
-                    side,
-                    amount,
-                    price: result.price
-                })
-                .then(blockchainResult => {
-                    if (blockchainResult.success) {
-                        console.log(`✅ Trade recorded on-chain: ${blockchainResult.txHash}`);
-                        order.txHash = blockchainResult.txHash;
-                    }
-                })
-                .catch(err => console.warn(`⚠️ Blockchain record failed: ${err.message}`));
+                // Update order with txHash
+                order.txHash = txHash;
+                console.log(`✅ Trade recorded on blockchain: ${txHash}`);
+            } catch (error) {
+                console.warn('⚠️ Blockchain recording failed:', error.message);
+            }
 
             if (side === 'buy') {
                 const position = {
@@ -188,29 +210,36 @@ class TradingAgent extends EventEmitter {
                     entryTime: new Date(),
                     stopLoss: signal.stopLoss || (result.price * 0.97),
                     takeProfit: signal.takeProfit || (result.price * 1.05),
+                    currentPrice: result.price,
                     unrealizedPnL: {
                         absolute: 0,
                         percentage: 0
-                    }
+                    },
+                    signalConfidence: signal.confidence,
+                    lstmPrediction: signal.lstmPrediction,
+                    orderId: result.orderId
                 };
 
                 this.portfolio.set(symbol, position);
-
-                const buyMessage = `🟢 <b>BUY EXECUTED</b>\n\n` +
-                    `🪙 ${symbol}\n` +
-                    `💰 $${(result.price || 0).toFixed(2)}\n` +
-                    `📊 ${amount.toFixed(6)}\n` +
-                    `🛑 Stop: $${position.stopLoss.toFixed(2)}\n` +
-                    `🎯 Target: $${position.takeProfit.toFixed(2)}`;
-
-                this.emit('sendTelegramMessage', buyMessage);
             } else {
-                // Close position
                 const position = this.portfolio.get(symbol);
+
                 if (position) {
                     const pnl = this.calculatePnL(position, result.price);
-                    this.updateTradingStats(pnl);
+
+                    // Update order with P&L
+                    order.pnl = pnl.absolute;
+                    order.pnlPercentage = pnl.percentage;
+                    order.exitPrice = result.price;
+                    order.exitTime = Date.now();
+
+                    // Update stats
+                    this.updateTradingStats(pnl.absolute);
+
+                    // Remove from portfolio
                     this.portfolio.delete(symbol);
+
+                    // Send P&L notification
                     await this.sendPnLNotification(symbol, position, result.price, pnl);
                 }
             }
@@ -223,6 +252,14 @@ class TradingAgent extends EventEmitter {
 
         } catch (error) {
             console.error('❌ Live order failed:', error.message);
+            const failureMessage = `❌ <b>TRADE FAILED</b>\n\n` +
+                `🪙 ${symbol}\n` +
+                `🎯 ${side.toUpperCase()}\n` +
+                `💰 Amount: $${amount.toFixed(2)}\n` +
+                `📛 Error: ${error.message}`;
+
+            this.emit('sendTelegramMessage', failureMessage);
+
             return {
                 success: false,
                 error: error.message
@@ -416,22 +453,73 @@ class TradingAgent extends EventEmitter {
     }
 
     getPortfolioStatus() {
-        const positions = Array.from(this.portfolio.values());
+        const positions = [];
         let totalUnrealizedPnL = 0;
+        let totalRealizedPnL = this.tradingStats.totalPnL || 0;
 
-        positions.forEach(pos => {
-            if (pos.unrealizedPnL) {
-                totalUnrealizedPnL += pos.unrealizedPnL.absolute;
-            }
-        });
+        // Convert Map to Array with detailed info
+        for (const [symbol, position] of this.portfolio) {
+            const positionData = {
+                symbol: symbol,
+                side: position.side,
+                quantity: position.quantity,
+                entryPrice: position.entryPrice,
+                currentPrice: position.currentPrice || position.entryPrice,
+                entryTime: position.entryTime,
+                stopLoss: position.stopLoss,
+                takeProfit: position.takeProfit,
+                unrealizedPnL: position.unrealizedPnL || {
+                    absolute: 0,
+                    percentage: 0
+                },
+                // ✅ Add more details
+                durationMinutes: position.entryTime ?
+                    Math.floor((Date.now() - new Date(position.entryTime).getTime()) / 60000) : 0,
+                signalConfidence: position.signalConfidence || 0,
+                lstmPrediction: position.lstmPrediction || null
+            };
+
+            positions.push(positionData);
+            totalUnrealizedPnL += positionData.unrealizedPnL.absolute;
+        }
+
+        // Calculate comprehensive stats
+        const winRate = this.getWinRate();
+        const avgWin = this.tradingStats.winTrades > 0 ?
+            this.tradingStats.totalPnL / this.tradingStats.winTrades :
+            0;
+        const avgLoss = this.tradingStats.lossTrades > 0 ?
+            Math.abs(this.tradingStats.totalPnL / this.tradingStats.lossTrades) :
+            0;
 
         return {
-            openPositions: positions.length,
+            // Positions
+            positions: positions,
+            openPositions: this.portfolio.size,
+
+            // P&L
+            totalRealizedPnL: totalRealizedPnL,
             totalUnrealizedPnL: totalUnrealizedPnL,
-            totalRealizedPnL: this.tradingStats.totalPnL,
-            winRate: this.getWinRate(),
-            totalTrades: this.tradingStats.totalTrades,
-            positions: positions
+            totalPnL: totalRealizedPnL + totalUnrealizedPnL,
+            dailyPnL: this.tradingStats.dailyPnL || 0,
+
+            // Stats
+            totalTrades: this.tradingStats.totalTrades || 0,
+            winTrades: this.tradingStats.winTrades || 0,
+            lossTrades: this.tradingStats.lossTrades || 0,
+            winRate: winRate,
+            avgWin: avgWin,
+            avgLoss: avgLoss,
+            profitFactor: avgLoss > 0 ? (avgWin / avgLoss) : 0,
+
+            // Balance
+            balance: this.balance,
+
+            // Mode
+            tradingMode: this.tradingMode,
+
+            // Timestamp
+            lastUpdated: Date.now()
         };
     }
 

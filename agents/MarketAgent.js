@@ -35,10 +35,27 @@ class MarketAgent extends EventEmitter {
 
             ws.on('error', (error) => {
                 console.error(`❌ WebSocket error for ${symbol}:`, error);
+                setTimeout(() => this.reconnect(symbol), 5000);
+            });
+            ws.on('close', () => {
+                console.warn(`⚠️ WebSocket closed for ${symbol}, reconnecting...`);
+                setTimeout(() => this.reconnect(symbol), 3000);
             });
 
             this.connections.set(symbol, ws);
         });
+    }
+
+
+    reconnect(symbol) {
+        if (this.connections.has(symbol)) {
+            const oldWs = this.connections.get(symbol);
+            if (oldWs.readyState === WebSocket.OPEN) return;
+            oldWs.terminate();
+        }
+
+        const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@ticker`);
+        this.connections.set(symbol, ws);
     }
 
     handlePriceUpdate(symbol, ticker) {

@@ -8,6 +8,9 @@ import {
 import technicalIndicators from '../services/TechnicalAnalysis.service.js';
 import AlertSystem from '../services/AlertSystem.service.js';
 import {
+    predictLSTM
+} from "../services/LSTMForecast.service.js";
+import {
     getAlerts,
     setAlerts
 } from '../data/alerts.js';
@@ -67,20 +70,14 @@ class AIAnalysisAgent extends EventEmitter {
 
         // Khởi tạo Telegram Bot
         this.bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-
-        console.log('✅ AIAnalysisService initialized');
         return this;
     }
 
     // Add method to handle external events
     handleNewsUpdate(newsData) {
-        console.log('📰 Received news update:', newsData.sentiment);
-        // Update analysis based on news sentiment
         this.lastNewsSentiment = newsData.sentiment;
     }
     updateMarketData(marketData) {
-        console.log(`📊 Market data updated for ${marketData.symbol}`);
-        // Store latest market data for analysis
         this.latestMarketData = marketData;
     }
     setOrchestrator(orchestrator) {
@@ -148,9 +145,6 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                 }
             };
 
-            console.log(`🤖 Calling Gemini API: ${apiUrl}`);
-
-            // ✅ FIX: Use X-goog-api-key header instead of query param
             const response = await axios.post(apiUrl, payload, {
                 headers: {
                     'Content-Type': 'application/json',
@@ -233,7 +227,7 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
      * @param {Array} alerts
      * @returns {string} 
      */
-    formatAlertMessage(symbol, priceData, techData, aiResult, alerts) {
+    formatAlertMessage(symbol, priceData, techData, aiResult, alerts, lstmData = null) {
         const coinData = priceData[symbol];
         const emoji = coinData.usd_24h_change > 0 ? '🟢' : '🔴';
         const trend = coinData.usd_24h_change > 0 ? 'BULLISH' : 'BEARISH';
@@ -257,6 +251,22 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
             • Stochastic: K=${techData.stochastic.k} D=${techData.stochastic.d} ${techData.stochastic.signal === 'OVERBOUGHT' ? '🔴' : techData.stochastic.signal === 'OVERSOLD' ? '🟢' : '🟡'}
             • Summary: ${techData.summary.overall_signal} (${techData.summary.confidence}%)
         `.trim();
+
+        if (lstmData) {
+            const lstmEmoji = lstmData.trend === 'BULLISH' ? '🟢' : lstmData.trend === 'BEARISH' ? '🔴' : '🟡';
+            const priceChange = ((lstmData.next_price - coinData.usd) / coinData.usd * 100).toFixed(2);
+
+            message += `\n\n🤖 <b>LSTM AI Prediction:</b>
+            ${lstmEmoji} <b>Trend:</b> ${lstmData.trend}
+            🎯 <b>Next Price:</b> $${lstmData.next_price.toFixed(2)} (${priceChange > 0 ? '+' : ''}${priceChange}%)
+            📊 <b>Confidence:</b> ${(lstmData.confidence * 100).toFixed(1)}%`;
+
+            if (lstmData.support_resistance) {
+                message += `
+            🛡️ <b>Support:</b> $${lstmData.support_resistance.support.toFixed(2)}
+            ⚡ <b>Resistance:</b> $${lstmData.support_resistance.resistance.toFixed(2)}`;
+            }
+        }
 
         if (alerts && alerts.length > 0) {
             message += '\n\n🚨 <b>Alerts:</b>';
@@ -331,13 +341,21 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
         console.log(`🔍 Starting analysis for: ${symbol}`);
 
         try {
-            // ✅ Use Binance ONLY (no CoinGecko)
-            const [priceData, techData] = await Promise.all([
+            const lstmData = symbol === 'bitcoin' ? lstmPredictions.btc : lstmPredictions.eth;
+
+            console.log(`📊 LSTM Prediction for ${symbol}:`, {
+                nextPrice: lstmData.next_price,
+                trend: lstmData.trend,
+                confidence: lstmData.confidence
+            });
+
+            const [lstmPredictions, priceData, techData, newsData] = await Promise.all([
+                predictLSTM(),
                 binancePriceService.getCryptoPrices([symbol]),
-                technicalIndicators.getTechnicalIndicators(symbol)
+                technicalIndicators.getTechnicalIndicators(symbol),
+                this.getLatestNews() // ✅ Add news sentiment
             ]);
 
-            // ✅ Validate price data
             if (!priceData || !priceData[symbol]) {
                 throw new Error(`No price data available for ${symbol}`);
             }
@@ -368,7 +386,15 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                 - Technical Summary: ${techData.summary.overall_signal}
                 - Active Alerts: ${alerts.length > 0 ? alerts.map(a => a.type).join(', ') : 'None'}
                 
-                Provide analysis and trading recommendations.
+                🤖 LSTM AI Predictions:
+                - Predicted Next Price: $${lstmData.next_price.toFixed(2)}
+                - Expected Change: ${priceChange}%
+                - Trend: ${lstmData.trend}
+                - Model Confidence: ${(lstmData.confidence * 100).toFixed(1)}%
+                ${lstmData.support_resistance ? `- Support: $${lstmData.support_resistance.support.toFixed(2)}` : ''}
+                ${lstmData.support_resistance ? `- Resistance: $${lstmData.support_resistance.resistance.toFixed(2)}` : ''}
+                
+                Consider the LSTM prediction alongside technical indicators to provide comprehensive trading recommendations.
             `;
 
             const aiResult = await this.analyzeWithAI(analysisData);
@@ -382,7 +408,13 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                     stopLoss: signal.stopLoss,
                     takeProfit: signal.takeProfit,
                     timestamp: new Date(),
-                    analysis: aiResult.analysis
+                    analysis: aiResult.analysis,
+                    lstmPrediction: {
+                        nextPrice: lstmData.next_price,
+                        trend: lstmData.trend,
+                        confidence: lstmData.confidence,
+                        priceChange: parseFloat(priceChange)
+                    }
                 }));
 
                 this.alertSystem.setTradingSignals(tradingSignals);
@@ -396,10 +428,10 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
             const shouldAlert = forceAlert ||
                 alerts.length > 0 ||
                 (aiResult.signals && aiResult.signals.length > 0) ||
-                Math.abs(priceData[symbol].usd_24h_change) > 5;
+                Math.abs(priceData[symbol].usd_24h_change) > 5 || Math.abs(parseFloat(priceChange)) > 3;
 
             if (shouldAlert) {
-                const alertMessage = this.formatAlertMessage(symbol, priceData, techData, aiResult, alerts);
+                const alertMessage = this.formatAlertMessage(symbol, priceData, techData, aiResult, alerts, lstmData);
                 await this.sendTelegramMessage(alertMessage);
                 this.previousPrices[symbol] = currentPrice;
 
@@ -424,6 +456,13 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                 error: error.message
             };
         }
+    }
+
+    async getLatestNews() {
+        if (this.orchestrator?.agents?.news) {
+            return this.orchestrator.agents.news.newsCache.get('latest');
+        }
+        return null;
     }
 
     /**

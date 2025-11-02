@@ -65,6 +65,10 @@ class AgentOrchestrator extends EventEmitter {
                 this.agents.analysis.setOrchestrator(this);
                 console.log('🔗 Orchestrator reference set');
             }
+            if (this.agents.risk && this.agents.risk.setOrchestrator) {
+                this.agents.risk.setOrchestrator(this);
+                console.log('🔗 Orchestrator reference set in RiskManager');
+            }
             // Setup communication between agents
             this.setupAgentCommunication();
 
@@ -87,31 +91,74 @@ class AgentOrchestrator extends EventEmitter {
     }
 
     setupAgentCommunication() {
-        console.log('🔇 Optimized agent communication (rate limit safe)');
+        console.log('🔗 Setting up FULL agent communication...');
 
-        // ✅ REMOVED: Market Agent -> Analysis Agent (too many triggers)
-        // Market data updates are now manual only
-
-        // ✅ REMOVED: News Agent (runs independently)
-
-        // ✅ KEPT: Analysis -> Trading (essential)
+        // ✅ Analysis -> Trading (AUTO TRADE)
         if (this.agents.analysis && this.agents.trading) {
             this.agents.analysis.on('tradingSignal', async (signal) => {
+                console.log('🎯 AUTO TRADE SIGNAL RECEIVED:', signal);
+
                 if (signal.confidence >= 0.75) {
+                    console.log('✅ Signal confidence passed, executing trade...');
                     const result = await this.agents.trading.executeSignal(signal);
+
                     if (result?.success) {
-                        console.log('✅ AUTO TRADE:', result.order.symbol);
+                        console.log('✅ AUTO TRADE EXECUTED:', result.order);
+
+                        // Send Telegram notification
+                        const message = `🚀 <b>AUTO TRADE EXECUTED</b>\n\n` +
+                            `🪙 <b>Coin:</b> ${signal.coin.toUpperCase()}\n` +
+                            `🎯 <b>Action:</b> ${signal.action}\n` +
+                            `💰 <b>Price:</b> $${result.order.price}\n` +
+                            `📊 <b>Amount:</b> ${result.order.amount}\n` +
+                            `🎖️ <b>Confidence:</b> ${(signal.confidence * 100).toFixed(0)}%\n` +
+                            `⏰ <b>Time:</b> ${new Date().toLocaleString()}`;
+
+                        if (this.agents.analysis.telegramBot?.sendMessage) {
+                            await this.agents.analysis.telegramBot.sendMessage(message);
+                        }
+                    } else {
+                        console.log('❌ AUTO TRADE FAILED:', result?.error);
                     }
+                } else {
+                    console.log(`⚠️ Signal rejected - confidence too low: ${(signal.confidence * 100).toFixed(0)}%`);
                 }
             });
         }
 
-        // ✅ KEPT: Telegram messaging
+        if (this.agents.trading && this.agents.risk) {
+            this.agents.trading.on('orderExecuted', async (order) => {
+                console.log('📋 Order executed, updating equity...');
+                await this.agents.risk.updateEquity(this.agents.trading);
+
+                // Update open positions count
+                this.agents.risk.openPositions = this.agents.trading.portfolio.size;
+            });
+        }
+
+        if (this.agents.news && this.agents.analysis) {
+            this.agents.news.on('marketNews', (newsData) => {
+                console.log(`📰 News received: ${newsData.sentiment}`);
+                this.agents.analysis.handleNewsUpdate(newsData);
+            });
+        }
+
+        if (this.agents.market && this.agents.analysis) {
+            this.agents.market.on('significantPriceMove', (priceData) => {
+                this.agents.analysis.updateMarketData(priceData);
+            });
+        }
+
+        // ✅ Telegram messaging
         if (this.agents.trading) {
             this.agents.trading.on('sendTelegramMessage', (message) => {
-                if (this.agents.analysis?.sendTelegramMessage) {
-                    this.agents.analysis.sendTelegramMessage(message);
+                if (this.agents.analysis?.telegramBot?.sendMessage) {
+                    this.agents.analysis.telegramBot.sendMessage(message);
                 }
+            });
+
+            this.agents.trading.on('orderExecuted', (order) => {
+                console.log('📋 Order executed:', order);
             });
         }
     }

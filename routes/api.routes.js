@@ -17,10 +17,34 @@ router.get('/health', async (req, res) => {
         }
 
         const status = orchestrator.getStatus();
+        const healthChecks = {};
+
+        // Check each agent
+        for (const [name, agentStatus] of Object.entries(status.agents)) {
+            healthChecks[name] = {
+                status: agentStatus.isRunning ? 'healthy' : 'down',
+                details: agentStatus
+            };
+        }
+
+        // Check RiskManager equity tracking
+        if (orchestrator.agents.risk) {
+            healthChecks.risk.equity = {
+                current: orchestrator.agents.risk.currentEquity,
+                peak: orchestrator.agents.risk.peakEquity,
+                drawdown: `${(orchestrator.agents.risk.calculateDrawdown() * 100).toFixed(2)}%`
+            };
+        }
+
+        // Overall system health
+        const allHealthy = Object.values(healthChecks).every(
+            check => check.status === 'healthy'
+        );
 
         res.json({
-            status: 'ok',
+            status: allHealthy ? 'healthy' : 'degraded',
             timestamp: Date.now(),
+            agents: healthChecks,
             system: status
         });
     } catch (error) {
@@ -82,17 +106,33 @@ router.get('/trading/portfolio', async (req, res) => {
 
         if (!orchestrator || !orchestrator.agents?.trading) {
             return res.status(503).json({
+                success: false,
                 error: 'Trading agent not available'
             });
         }
 
         const portfolio = orchestrator.agents.trading.getPortfolioStatus();
+
+        const riskMetrics = orchestrator.agents.risk ? {
+            dailyPnL: orchestrator.agents.risk.dailyPnL,
+            openPositions: orchestrator.agents.risk.openPositions,
+            currentEquity: orchestrator.agents.risk.currentEquity,
+            peakEquity: orchestrator.agents.risk.peakEquity,
+            drawdown: orchestrator.agents.risk.calculateDrawdown(),
+            riskLimits: orchestrator.agents.risk.riskLimits
+        } : null;
+
         res.json({
             success: true,
-            portfolio
+            portfolio: {
+                ...portfolio,
+                risk: riskMetrics
+            }
         });
     } catch (error) {
+        console.error('Portfolio API error:', error);
         res.status(500).json({
+            success: false,
             error: error.message
         });
     }
@@ -104,17 +144,158 @@ router.get('/trading/history', async (req, res) => {
 
         if (!orchestrator || !orchestrator.agents?.trading) {
             return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        const {
+            limit = 50, symbol, side, status
+        } = req.query;
+        let history = orchestrator.agents.trading.orderHistory;
+
+        // ✅ Apply filters
+        if (symbol) {
+            history = history.filter(order => order.symbol === symbol);
+        }
+        if (side) {
+            history = history.filter(order => order.side === side.toUpperCase());
+        }
+        if (status) {
+            history = history.filter(order => order.status === status.toUpperCase());
+        }
+
+        // ✅ Sort by timestamp (newest first)
+        history = history.sort((a, b) => b.timestamp - a.timestamp);
+
+        // ✅ Limit results
+        history = history.slice(0, parseInt(limit));
+
+        // ✅ Calculate summary stats
+        const summary = {
+            totalTrades: history.length,
+            totalPnL: history.reduce((sum, order) => sum + (order.pnl || 0), 0),
+            openTrades: history.filter(order => order.status === 'OPEN').length,
+            closedTrades: history.filter(order => order.status === 'CLOSED').length,
+            avgTradeSize: history.reduce((sum, order) => sum + order.amount, 0) / history.length
+        };
+
+        res.json({
+            success: true,
+            history: history,
+            summary: summary,
+            pagination: {
+                total: orchestrator.agents.trading.orderHistory.length,
+                returned: history.length,
+                limit: parseInt(limit)
+            }
+        });
+    } catch (error) {
+        console.error('History API error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.get('/trading/trade/:orderId', async (req, res) => {
+    try {
+        const orchestrator = req.app.get('orchestrator');
+        const {
+            orderId
+        } = req.params;
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        const trade = orchestrator.agents.trading.orderHistory.find(
+            order => order.id === orderId
+        );
+
+        if (!trade) {
+            return res.status(404).json({
+                success: false,
+                error: 'Trade not found'
+            });
+        }
+
+        res.json({
+            success: true,
+            trade: trade
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.get('/trading/stats', async (req, res) => {
+    try {
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
                 error: 'Trading agent not available'
             });
         }
 
         const history = orchestrator.agents.trading.orderHistory;
+        const portfolio = orchestrator.agents.trading.getPortfolioStatus();
+
+        // Calculate detailed stats
+        const closedTrades = history.filter(order => order.status === 'CLOSED');
+        const totalPnL = closedTrades.reduce((sum, order) => sum + (order.pnl || 0), 0);
+        const winningTrades = closedTrades.filter(order => (order.pnl || 0) > 0);
+        const losingTrades = closedTrades.filter(order => (order.pnl || 0) < 0);
+
+        const stats = {
+            overview: {
+                totalTrades: history.length,
+                openPositions: portfolio.openPositions,
+                closedPositions: closedTrades.length,
+                totalPnL: totalPnL,
+                dailyPnL: portfolio.dailyPnL
+            },
+            performance: {
+                winRate: portfolio.winRate,
+                winningTrades: winningTrades.length,
+                losingTrades: losingTrades.length,
+                avgWin: winningTrades.length > 0 ?
+                    winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length :
+                    0,
+                avgLoss: losingTrades.length > 0 ?
+                    Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length) :
+                    0,
+                bestTrade: closedTrades.length > 0 ?
+                    Math.max(...closedTrades.map(t => t.pnl || 0)) :
+                    0,
+                worstTrade: closedTrades.length > 0 ?
+                    Math.min(...closedTrades.map(t => t.pnl || 0)) :
+                    0
+            },
+            risk: {
+                currentEquity: orchestrator.agents.risk?.currentEquity || 0,
+                peakEquity: orchestrator.agents.risk?.peakEquity || 0,
+                drawdown: orchestrator.agents.risk?.calculateDrawdown() || 0,
+                riskLimits: orchestrator.agents.risk?.riskLimits || {}
+            }
+        };
+
         res.json({
             success: true,
-            history
+            stats: stats
         });
     } catch (error) {
         res.status(500).json({
+            success: false,
             error: error.message
         });
     }

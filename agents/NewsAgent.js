@@ -59,19 +59,25 @@ class NewsAgent extends EventEmitter {
                 const sentiment = this.analyzeSentiment(newsData);
                 const sentimentScore = this.calculateSentimentScore(sentiment);
 
-                // ✅ FIX: Check if recordSentiment exists before calling
+                this.newsCache.set('latest', {
+                    data: newsData,
+                    sentiment,
+                    score: sentimentScore,
+                    timestamp: Date.now()
+                });
+
                 if (this.blockchainConnector && typeof this.blockchainConnector.recordSentiment === 'function') {
                     this.blockchainConnector.recordSentiment('BTC', sentiment, sentimentScore)
                         .catch(err => console.warn('⚠️ Blockchain record skipped:', err.message));
-                } else {
-                    console.warn('⚠️ Blockchain recordSentiment not available');
                 }
 
                 this.lastNewsUpdate = Date.now();
                 this.emit('marketNews', {
                     news: newsData,
                     timestamp: Date.now(),
-                    sentiment
+                    sentiment,
+                    score: sentimentScore,
+                    impact: this.calculateImpact(sentimentScore)
                 });
 
                 console.log(`✅ News collected: ${sentiment} sentiment`);
@@ -79,6 +85,12 @@ class NewsAgent extends EventEmitter {
         } catch (err) {
             console.error("❌ Error collecting crypto news:", err.message);
         }
+    }
+
+    calculateImpact(score) {
+        if (score >= 0.8 || score <= 0.2) return 'HIGH';
+        if (score >= 0.65 || score <= 0.35) return 'MEDIUM';
+        return 'LOW';
     }
 
     getMockNews() {

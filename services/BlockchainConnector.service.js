@@ -396,6 +396,41 @@ class BlockchainConnector extends EventEmitter {
         }
     }
 
+    async recordSentiment(coin, sentiment, score = 0.5) {
+        if (!this.signalStorageContract) {
+            return {
+                success: false,
+                error: 'Contract not initialized'
+            };
+        }
+
+        try {
+            console.log(`📊 Recording sentiment: ${coin} - ${sentiment} (${score})`);
+
+            const tx = await this.signalStorageContract.recordSentiment(
+                coin,
+                sentiment,
+                Math.floor(score * 100) // Convert 0-1 to 0-100
+            );
+
+            const receipt = await tx.wait();
+            console.log(`✅ Sentiment recorded on-chain! Block: ${receipt.blockNumber}`);
+
+            return {
+                success: true,
+                txHash: tx.hash,
+                blockNumber: receipt.blockNumber
+            };
+
+        } catch (error) {
+            console.error('❌ Failed to record sentiment:', error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
     getStatus() {
         return {
             isConnected: this.isConnected,
