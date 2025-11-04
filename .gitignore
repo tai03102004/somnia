@@ -1,7 +1,8 @@
 node_modules
 .env
 cache
-artifacts.env
+artifacts
+.env
 python/venv/lib
 python/venv/share
 contracts/abis
