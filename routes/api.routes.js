@@ -60,7 +60,6 @@ router.get('/health', async (req, res) => {
 router.get('/market/status', async (req, res) => {
     try {
         const orchestrator = req.app.get('orchestrator');
-        console.log("Agent analysis: ", orchestrator.agents)
 
         if (!orchestrator || !orchestrator.agents?.analysis) {
             return res.status(503).json({
@@ -269,17 +268,13 @@ router.get('/trading/stats', async (req, res) => {
                 winningTrades: winningTrades.length,
                 losingTrades: losingTrades.length,
                 avgWin: winningTrades.length > 0 ?
-                    winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length :
-                    0,
+                    winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length : 0,
                 avgLoss: losingTrades.length > 0 ?
-                    Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length) :
-                    0,
+                    Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length) : 0,
                 bestTrade: closedTrades.length > 0 ?
-                    Math.max(...closedTrades.map(t => t.pnl || 0)) :
-                    0,
+                    Math.max(...closedTrades.map(t => t.pnl || 0)) : 0,
                 worstTrade: closedTrades.length > 0 ?
-                    Math.min(...closedTrades.map(t => t.pnl || 0)) :
-                    0
+                    Math.min(...closedTrades.map(t => t.pnl || 0)) : 0
             },
             risk: {
                 currentEquity: orchestrator.agents.risk?.currentEquity || 0,
@@ -359,7 +354,10 @@ router.post('/analysis/trigger', async (req, res) => {
         });
     }
 
+    console.log("coin:", normalizedCoin)
+
     const result = await orchestrator.agents.analysis.analyzeAndAlert(normalizedCoin, true);
+    console.log("afasf: ", result)
     res.json(result);
     // } catch (error) {
     //     res.status(500).json({
@@ -370,6 +368,29 @@ router.post('/analysis/trigger', async (req, res) => {
 });
 
 // Blockchain endpoints
+
+router.get('/blockchain/analytics', async (req, res) => {
+    try {
+        const result = await blockchainConnector.getAnalytics();
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.post('/blockchain/retry-cache', async (req, res) => {
+    try {
+        const result = await blockchainConnector.retryCachedSubmissions();
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
 router.get('/blockchain/status', async (req, res) => {
     try {
         const status = blockchainConnector.getStatus();
@@ -396,10 +417,23 @@ router.post('/blockchain/submit-signal', async (req, res) => {
     }
 });
 
-router.post('/blockchain/execute-trade', async (req, res) => {
+router.get('/blockchain/signals', async (req, res) => {
     try {
-        const trade = req.body;
-        const result = await blockchainConnector.executeTrade(trade);
+        const {
+            limit = 10
+        } = req.query;
+        const result = await blockchainConnector.getLatestSignals(parseInt(limit));
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/blockchain/my-signals', async (req, res) => {
+    try {
+        const result = await blockchainConnector.getMySignals();
         res.json(result);
     } catch (error) {
         res.status(500).json({
@@ -435,13 +469,128 @@ router.post('/dao/create-proposal', async (req, res) => {
     }
 });
 
+router.get('/blockchain/trades', async (req, res) => {
+    try {
+        const {
+            address
+        } = req.query;
+        const result = await blockchainConnector.getUserTrades(address);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/blockchain/trade/:id', async (req, res) => {
+    try {
+        const result = await blockchainConnector.getTradeById(req.params.id);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/blockchain/volume/:address?', async (req, res) => {
+    try {
+        const {
+            address
+        } = req.params;
+        const result = await blockchainConnector.getUserVolume(address);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.post('/blockchain/execute-trade', async (req, res) => {
+    try {
+        const trade = req.body;
+        const result = await blockchainConnector.executeTrade(trade);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.post('/dao/proposal', async (req, res) => {
+    try {
+        const {
+            signalId,
+            description
+        } = req.body;
+
+        if (!signalId) {
+            return res.status(400).json({
+                success: false,
+                error: 'signalId is required'
+            });
+        }
+
+        const result = await blockchainConnector.createVotingProposal(
+            signalId,
+            description
+        );
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/dao/proposal/:id', async (req, res) => {
+    try {
+        const result = await blockchainConnector.getProposal(req.params.id);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
 router.post('/dao/vote', async (req, res) => {
     try {
         const {
             proposalId,
             support
         } = req.body;
-        const result = await blockchainConnector.voteOnSignal(proposalId, support);
+
+        if (proposalId === undefined || support === undefined) {
+            return res.status(400).json({
+                success: false,
+                error: 'proposalId and support (true/false) are required'
+            });
+        }
+
+        const result = await blockchainConnector.voteOnSignal(
+            proposalId,
+            Boolean(support)
+        );
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/dao/voting-power/:address?', async (req, res) => {
+    try {
+        const {
+            address
+        } = req.params;
+        const result = await blockchainConnector.getVotingPower(address);
         res.json(result);
     } catch (error) {
         res.status(500).json({
@@ -455,9 +604,59 @@ router.post('/rewards/distribute', async (req, res) => {
     try {
         const {
             userAddress,
-            amount
+            amount,
+            reason
         } = req.body;
-        const result = await blockchainConnector.rewardUser(userAddress, amount);
+
+        if (!userAddress || !amount) {
+            return res.status(400).json({
+                success: false,
+                error: 'userAddress and amount are required'
+            });
+        }
+
+        const result = await blockchainConnector.rewardUser(
+            userAddress,
+            parseFloat(amount),
+            reason
+        );
+
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.post('/rewards/bulk-distribute', async (req, res) => {
+    try {
+        const {
+            recipients
+        } = req.body;
+
+        if (!Array.isArray(recipients) || recipients.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'recipients array is required'
+            });
+        }
+
+        const result = await blockchainConnector.distributeRewards(recipients);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/rewards/balance/:address?', async (req, res) => {
+    try {
+        const {
+            address
+        } = req.params;
+        const result = await blockchainConnector.getTokenBalance(address);
         res.json(result);
     } catch (error) {
         res.status(500).json({

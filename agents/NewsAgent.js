@@ -43,6 +43,53 @@ class NewsAgent extends EventEmitter {
         }, 30 * 60 * 1000);
     }
 
+    async runCrewAIScript() {
+        return new Promise((resolve, reject) => {
+            const scriptPath = path.join(__dirname, '../python/crew_analysis.py');
+            const pythonBinPath = path.join(__dirname, '../python/venv/bin/python3');
+
+            console.log("Script Path: ", scriptPath);
+            console.log("Python Bin Path: ", pythonBinPath);
+
+            const fs = require('fs');
+            if (!fs.existsSync(scriptPath)) {
+                return reject(new Error('Python script not found'));
+            }
+
+            const pythonProcess = spawn(pythonBinPath, [scriptPath], {
+                timeout: 30000
+            });
+
+            let output = '';
+            let errorOutput = '';
+
+            pythonProcess.stdout.on('data', (data) => {
+                output += data.toString();
+            });
+
+            pythonProcess.stderr.on('data', (data) => {
+                errorOutput += data.toString();
+            });
+
+            pythonProcess.on('close', (code) => {
+                if (code === 0 && output) {
+                    try {
+                        const newsData = JSON.parse(output);
+                        resolve(newsData);
+                    } catch {
+                        resolve(output);
+                    }
+                } else {
+                    reject(new Error(`Script failed: ${errorOutput || 'No output'}`));
+                }
+            });
+
+            pythonProcess.on('error', (error) => {
+                reject(error);
+            });
+        });
+    }
+
     async collectCryptoNews() {
         try {
             console.log('📰 Collecting crypto news...');
@@ -100,50 +147,6 @@ class NewsAgent extends EventEmitter {
             "Major cryptocurrency exchange reports 300% increase in trading volume as retail interest surges"
         ];
         return mockNews.join('\n');
-    }
-
-    async runCrewAIScript() {
-        return new Promise((resolve, reject) => {
-            const scriptPath = path.join(__dirname, '../python/crew_analysis.py');
-            const pythonBinPath = path.join(__dirname, '../python/venv/bin/python3');
-
-            const fs = require('fs');
-            if (!fs.existsSync(scriptPath)) {
-                return reject(new Error('Python script not found'));
-            }
-
-            const pythonProcess = spawn(pythonBinPath, [scriptPath], {
-                timeout: 30000
-            });
-
-            let output = '';
-            let errorOutput = '';
-
-            pythonProcess.stdout.on('data', (data) => {
-                output += data.toString();
-            });
-
-            pythonProcess.stderr.on('data', (data) => {
-                errorOutput += data.toString();
-            });
-
-            pythonProcess.on('close', (code) => {
-                if (code === 0 && output) {
-                    try {
-                        const newsData = JSON.parse(output);
-                        resolve(newsData);
-                    } catch {
-                        resolve(output);
-                    }
-                } else {
-                    reject(new Error(`Script failed: ${errorOutput || 'No output'}`));
-                }
-            });
-
-            pythonProcess.on('error', (error) => {
-                reject(error);
-            });
-        });
     }
 
     analyzeSentiment(newsText) {

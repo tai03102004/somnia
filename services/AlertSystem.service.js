@@ -44,11 +44,26 @@ class AlertSystem {
     checkAlerts(coinId, currentData, previousData, techData) {
         const alerts = [];
 
-        // Market alerts with multiple confirmations
+        // Market alerts
         alerts.push(...this.checkMarketAlerts(coinId, currentData, previousData, techData));
 
         // Trading signal alerts
         alerts.push(...this.checkTradingSignals(coinId, currentData));
+
+        // ✨ NEW: Kiểm tra AI signals từ active signals
+        const activeSignal = this.activeSignals.get(coinId);
+        if (activeSignal && activeSignal.confidence >= 0.75) {
+            alerts.push({
+                type: 'HIGH_CONFIDENCE_SIGNAL',
+                coin: coinId,
+                message: `${coinId.toUpperCase()} - Strong ${activeSignal.action} signal (${(activeSignal.confidence * 100).toFixed(0)}%)`,
+                severity: 'CRITICAL',
+                timestamp: new Date(),
+                currentPrice: currentData.usd,
+                action: activeSignal.action,
+                recommendation: `Auto-trade ready: ${activeSignal.action} at $${activeSignal.entryPoint}`
+            });
+        }
 
         return alerts;
     }

@@ -5,6 +5,7 @@ import TradingAgent from '../agents/TradingAgent.js';
 import NewsAgent from '../agents/NewsAgent.js';
 import RiskManager from '../agents/RiskManager.js';
 import BlockchainConnector from '../services/BlockchainConnector.service.js';
+import cron from 'node-cron';
 
 class AgentOrchestrator extends EventEmitter {
     constructor() {
@@ -20,6 +21,8 @@ class AgentOrchestrator extends EventEmitter {
             tradingMode: 'live', // paper or live
         };
         this.blockchainConnector = BlockchainConnector;
+
+        this.scheduledJobs = [];
     }
 
     async initialize() {
@@ -93,6 +96,18 @@ class AgentOrchestrator extends EventEmitter {
     setupAgentCommunication() {
         console.log('🔗 Setting up FULL agent communication...');
 
+        if (this.agents.analysis?.alertSystem) {
+            // Khi có CRITICAL alerts -> trigger auto trade
+            setInterval(() => {
+                const activeSignals = this.agents.analysis.alertSystem.getActiveSignals();
+                activeSignals.forEach(signal => {
+                    if (signal.confidence >= 0.75 && signal.status === 'ACTIVE') {
+                        this.agents.trading.executeSignal(signal);
+                    }
+                });
+            }, 60000); // Check every minute
+        }
+
         // ✅ Analysis -> Trading (AUTO TRADE)
         if (this.agents.analysis && this.agents.trading) {
             this.agents.analysis.on('tradingSignal', async (signal) => {
@@ -163,27 +178,164 @@ class AgentOrchestrator extends EventEmitter {
         }
     }
 
+    startAutoSchedule() {
+        console.log('⏰ Starting automatic scheduling...\n');
+
+        // 🔥 Schedule 1: Quick analysis every 5 minutes
+        const quickAnalysisJob = cron.schedule('*/5 * * * *', async () => {
+            console.log('\n⚡ [AUTO] Quick market scan triggered');
+            try {
+                for (const coin of this.config.supportedCoins) {
+                    await this.agents.analysis.analyzeAndAlert(coin, false);
+                }
+            } catch (error) {
+                console.error('❌ Quick analysis error:', error.message);
+            }
+        });
+        this.scheduledJobs.push(quickAnalysisJob);
+        console.log('✅ Quick analysis scheduled: Every 5 minutes');
+
+        // 🔥 Schedule 2: Deep analysis every 30 minutes
+        const deepAnalysisJob = cron.schedule('*/30 * * * *', async () => {
+            console.log('\n🔍 [AUTO] Deep market analysis triggered');
+            try {
+                for (const coin of this.config.supportedCoins) {
+                    await this.agents.analysis.analyzeAndAlert(coin, true);
+                }
+            } catch (error) {
+                console.error('❌ Deep analysis error:', error.message);
+            }
+        });
+        this.scheduledJobs.push(deepAnalysisJob);
+        console.log('✅ Deep analysis scheduled: Every 30 minutes');
+
+        // 🔥 Schedule 3: News collection every hour
+        const newsJob = cron.schedule('0 * * * *', async () => {
+            console.log('\n📰 [AUTO] News collection triggered');
+            try {
+                await this.agents.news.fetchNews();
+            } catch (error) {
+                console.error('❌ News collection error:', error.message);
+            }
+        });
+        this.scheduledJobs.push(newsJob);
+        console.log('✅ News collection scheduled: Every hour');
+
+        // 🔥 Schedule 4: Portfolio rebalance check every 2 hours
+        const rebalanceJob = cron.schedule('0 */2 * * *', async () => {
+            console.log('\n💼 [AUTO] Portfolio rebalance check');
+            try {
+                const portfolio = this.agents.trading.getPortfolioStatus();
+                console.log(`Current portfolio: ${portfolio.openPositions} open positions`);
+
+                // Check if any positions need closing
+                for (const [symbol, position] of this.agents.trading.portfolio.entries()) {
+                    const currentPrice = await this.getMarketData(symbol);
+
+                    // Auto close if stop loss or take profit hit
+                    if (currentPrice.price <= position.stopLoss ||
+                        currentPrice.price >= position.takeProfit) {
+                        console.log(`🎯 Auto-closing position: ${symbol}`);
+                        await this.agents.trading.closePosition(symbol, currentPrice.price);
+                    }
+                }
+            } catch (error) {
+                console.error('❌ Rebalance error:', error.message);
+            }
+        });
+        this.scheduledJobs.push(rebalanceJob);
+        console.log('✅ Portfolio rebalance scheduled: Every 2 hours');
+
+        // 🔥 Schedule 5: Risk metrics update every 15 minutes
+        const riskUpdateJob = cron.schedule('*/15 * * * *', async () => {
+            console.log('\n🛡️ [AUTO] Risk metrics update');
+            try {
+                await this.agents.risk.updateEquity(this.agents.trading);
+                const drawdown = this.agents.risk.calculateDrawdown();
+                console.log(`Current drawdown: ${(drawdown * 100).toFixed(2)}%`);
+
+                // Alert if drawdown exceeds threshold
+                if (drawdown > 0.10) {
+                    console.warn(`⚠️ HIGH DRAWDOWN ALERT: ${(drawdown * 100).toFixed(2)}%`);
+                    await this.agents.analysis.sendTelegramMessage(
+                        `🚨 <b>Risk Alert</b>\n\nDrawdown: ${(drawdown * 100).toFixed(2)}%\nAction: Monitoring`
+                    );
+                }
+            } catch (error) {
+                console.error('❌ Risk update error:', error.message);
+            }
+        });
+        this.scheduledJobs.push(riskUpdateJob);
+        console.log('✅ Risk metrics update scheduled: Every 15 minutes');
+
+        // 🔥 Schedule 6: Daily summary at 9 AM
+        const dailySummaryJob = cron.schedule('0 9 * * *', async () => {
+            console.log('\n📊 [AUTO] Daily summary report');
+            try {
+                const portfolio = this.agents.trading.getPortfolioStatus();
+                const riskMetrics = {
+                    equity: this.agents.risk.currentEquity,
+                    drawdown: this.agents.risk.calculateDrawdown(),
+                    dailyPnL: this.agents.risk.dailyPnL
+                };
+
+                const summary = `
+📊 <b>Daily Summary Report</b>
+
+💼 <b>Portfolio:</b>
+• Open Positions: ${portfolio.openPositions}
+• Total Trades: ${portfolio.totalTrades}
+• Win Rate: ${portfolio.winRate}%
+
+💰 <b>Performance:</b>
+• Daily P&L: $${riskMetrics.dailyPnL.toFixed(2)}
+• Current Equity: $${riskMetrics.equity.toFixed(2)}
+• Drawdown: ${(riskMetrics.drawdown * 100).toFixed(2)}%
+
+⏰ ${new Date().toLocaleString('vi-VN')}
+                `.trim();
+
+                await this.agents.analysis.sendTelegramMessage(summary);
+            } catch (error) {
+                console.error('❌ Daily summary error:', error.message);
+            }
+        });
+        this.scheduledJobs.push(dailySummaryJob);
+        console.log('✅ Daily summary scheduled: 9:00 AM daily');
+
+        console.log('\n🎉 All automatic schedules activated!\n');
+    }
+
+    // ✅ Stop all scheduled jobs
+    stopAutoSchedule() {
+        console.log('⏸️ Stopping all scheduled jobs...');
+        this.scheduledJobs.forEach(job => job.stop());
+        this.scheduledJobs = [];
+        console.log('✅ All scheduled jobs stopped');
+    }
+
     getStatus() {
         const status = {
             isRunning: this.isRunning,
             agents: {},
             totalAlerts: 0,
             activeSignals: 0,
+            scheduledJobs: this.scheduledJobs.length,
             timestamp: Date.now()
         };
 
         for (const [name, agent] of Object.entries(this.agents)) {
-            if (agent && agent.getStatus) {
-                status.agents[name] = agent.getStatus();
-            } else {
-                status.agents[name] = 'unknown';
-            }
+            status.agents[name] = {
+                isRunning: agent.isRunning || false,
+                status: agent.getStatus ? agent.getStatus() : 'No status available'
+            };
         }
 
         // Get additional metrics from analysis agent
         if (this.agents.analysis && this.agents.analysis.getStatus) {
             const analysisStatus = this.agents.analysis.getStatus();
-            status.totalAlerts = analysisStatus.cronJobs || 0;
+            status.totalAlerts = analysisStatus.totalAlerts || 0;
+            status.activeSignals = analysisStatus.activeSignals || 0;
         }
 
         return status;
@@ -211,37 +363,30 @@ class AgentOrchestrator extends EventEmitter {
         const startOrder = ['market', 'risk', 'trading', 'news', 'analysis'];
 
         for (const agentName of startOrder) {
-            const agent = this.agents[agentName];
-            try {
-                if (agentName === 'analysis') {
-                    // Analysis agent singleton
-                    if (agent && agent.start) {
-                        const result = await agent.start();
-                        if (result?.success !== false) {
-                            console.log(`✅ ${agentName} agent started`);
-                        } else {
-                            console.warn(`⚠️ ${agentName} agent start failed: ${result?.error}`);
-                        }
-                    }
-                } else if (agent && agent.start) {
-                    const result = await agent.start(this.config);
-                    if (result?.success !== false) {
-                        console.log(`✅ ${agentName} agent started`);
-                    } else {
-                        console.warn(`⚠️ ${agentName} agent start failed: ${result?.error}`);
-                    }
-                } else {
-                    console.warn(`⚠️ ${agentName} agent not found or no start method`);
+            if (this.agents[agentName]) {
+                try {
+                    console.log(`🔄 Starting ${agentName} agent...`);
+                    await this.agents[agentName].start(this.config);
+                    console.log(`✅ ${agentName} agent started`);
+                } catch (error) {
+                    console.error(`❌ Failed to start ${agentName} agent:`, error.message);
+                    console.warn(`⚠️ Continuing without ${agentName} agent`);
                 }
-            } catch (error) {
-                console.error(`❌ Failed to start ${agentName} agent:`, error.message);
-                // Continue to next agent instead of stopping
             }
         }
 
         this.isRunning = true;
+        this.startAutoSchedule();
+
         console.log('\n🎉 All agents initialization complete!');
         this.printAgentStatus();
+
+        console.log('\n🚀 Running initial market analysis...');
+        setTimeout(async () => {
+            for (const coin of this.config.supportedCoins) {
+                await this.agents.analysis.analyzeAndAlert(coin, true);
+            }
+        }, 5000);
     }
 
     printAgentStatus() {
@@ -249,11 +394,8 @@ class AgentOrchestrator extends EventEmitter {
         console.log('─'.repeat(50));
 
         for (const [name, agent] of Object.entries(this.agents)) {
-            const status = agent.getStatus ? agent.getStatus() : {
-                isRunning: false
-            };
-            const icon = status.isRunning ? '✅' : '❌';
-            console.log(`${icon} ${name.padEnd(15)} - ${status.isRunning ? 'Running' : 'Stopped'}`);
+            const status = agent.isRunning ? '✅ RUNNING' : '❌ STOPPED';
+            console.log(`${name.padEnd(15)} ${status}`);
         }
 
         console.log('─'.repeat(50) + '\n');
@@ -262,14 +404,16 @@ class AgentOrchestrator extends EventEmitter {
     async stop() {
         console.log('🛑 Stopping all agents...');
 
+        this.stopAutoSchedule();
+
         for (const [name, agent] of Object.entries(this.agents)) {
-            try {
-                if (agent && agent.stop) {
+            if (agent.stop) {
+                try {
                     await agent.stop();
+                    console.log(`✅ ${name} agent stopped`);
+                } catch (error) {
+                    console.error(`❌ Error stopping ${name}:`, error.message);
                 }
-                console.log(`✅ ${name} agent stopped`);
-            } catch (error) {
-                console.error(`❌ Error stopping ${name} agent:`, error);
             }
         }
 
@@ -308,31 +452,19 @@ class AgentOrchestrator extends EventEmitter {
 
     async getMarketData(symbol) {
         if (this.agents.market && this.agents.market.priceCache) {
-            return this.agents.market.priceCache.get(symbol) || null;
+            return this.agents.market.priceCache.get(symbol);
         }
         return null;
     }
 
-    // Force news collection
     async collectNews() {
-        try {
-            if (this.agents.news && this.agents.news.collectCryptoNews) {
-                await this.agents.news.collectCryptoNews();
-                return {
-                    success: true,
-                    message: 'News collection triggered'
-                };
-            }
-            return {
-                success: false,
-                error: 'News agent not available'
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: error.message
-            };
+        if (this.agents.news) {
+            return await this.agents.news.fetchNews();
         }
+        return {
+            success: false,
+            message: 'News agent not available'
+        };
     }
 }
 

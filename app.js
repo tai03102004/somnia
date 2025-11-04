@@ -63,37 +63,56 @@ setTimeout(async () => {
 
     const orchestrator = new AgentOrchestrator();
     app.set('orchestrator', orchestrator);
+    try {
 
-    // Initialize blockchain connector
-    const blockchainConfig = {
-        signalStorageABI: JSON.parse(process.env.SIGNAL_STORAGE_ABI || '[]'),
-        tradeExecutorABI: JSON.parse(process.env.TRADE_EXECUTOR_ABI || '[]'),
-        daoVotingABI: JSON.parse(process.env.DAO_VOTING_ABI || '[]'),
-        rewardTokenABI: JSON.parse(process.env.REWARD_TOKEN_ABI || '[]')
-    };
+        // Initialize blockchain connector
+        const blockchainConfig = {
+            signalStorageABI: JSON.parse(process.env.SIGNAL_STORAGE_ABI || '[]'),
+            tradeExecutorABI: JSON.parse(process.env.TRADE_EXECUTOR_ABI || '[]'),
+            daoVotingABI: JSON.parse(process.env.DAO_VOTING_ABI || '[]'),
+            rewardTokenABI: JSON.parse(process.env.REWARD_TOKEN_ABI || '[]')
+        };
 
-    await blockchainConnector.initialize(blockchainConfig);
+        await blockchainConnector.initialize(blockchainConfig);
 
-    const result = await orchestrator.initialize();
+        await orchestrator.initialize();
+        console.log('✅ Agent orchestrator initialized');
 
-    if (result.success) {
-        console.log('✅ Complete Trading System started successfully!');
-        console.log('📱 All agents are now running:');
-        console.log('  • Market Agent - Price monitoring');
+        orchestrator.setupAgentCommunication();
+        console.log('✅ Agent communication channels established');
+
+        await orchestrator.startAllAgents();
+        console.log('✅ All agents started with automatic scheduling');
+
+        console.log('\n🎉 System fully operational - All agents running automatically!');
+        console.log('📱 Active Components:');
+        console.log('  • Market Agent - Real-time price monitoring');
         console.log('  • Analysis Agent - AI analysis & Telegram bot');
-        console.log('  • Trading Agent - Auto trading');
-        console.log('  • News Agent - News monitoring');
-        console.log('  • Risk Manager - Risk management');
+        console.log('  • Trading Agent - Auto trading execution');
+        console.log('  • News Agent - Market news monitoring');
+        console.log('  • Risk Manager - Risk management & limits');
         console.log('  • Blockchain Connector - Somnia integration');
-    } else {
-        console.error('❌ Failed to start Trading System:', result.error);
+        console.log('\n⏰ Automatic Schedules:');
+        console.log('  • Quick scan: Every 5 minutes');
+        console.log('  • Deep analysis: Every 30 minutes');
+        console.log('  • News collection: Every hour');
+        console.log('  • Portfolio check: Every 2 hours');
+        console.log('  • Risk update: Every 15 minutes');
+        console.log('  • Daily summary: 9:00 AM\n');
+    } catch (error) {
+        console.error('❌ Failed to start system:', error);
+        console.error('Stack trace:', error.stack);
     }
 }, 3000);
 
 app.listen(PORT, () => {
-    console.log(`Crypto Co-Pilot Backend running on port ${PORT}`);
-    console.log(`WebSocket server running on port 8080`);
-    console.log('Scheduled analysis every 5 minutes');
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🚀 Crypto Co-Pilot Backend Server Started`);
+    console.log(`${'='.repeat(60)}`);
+    console.log(`📡 HTTP API: http://localhost:${PORT}`);
+    console.log(`🔌 WebSocket: ws://localhost:8080`);
+    console.log(`⏰ Auto-scheduling: Enabled`);
+    console.log(`${'='.repeat(60)}\n`);
 });
 
 export default app;

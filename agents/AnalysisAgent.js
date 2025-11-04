@@ -8,9 +8,6 @@ import {
 import technicalIndicators from '../services/TechnicalAnalysis.service.js';
 import AlertSystem from '../services/AlertSystem.service.js';
 import {
-    predictLSTM
-} from "../services/LSTMForecast.service.js";
-import {
     getAlerts,
     setAlerts
 } from '../data/alerts.js';
@@ -252,22 +249,21 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
             • Summary: ${techData.summary.overall_signal} (${techData.summary.confidence}%)
         `.trim();
 
-        if (lstmData) {
+        if (lstmData && lstmData.next_price > 0) {
             const lstmEmoji = lstmData.trend === 'BULLISH' ? '🟢' : lstmData.trend === 'BEARISH' ? '🔴' : '🟡';
             const priceChange = ((lstmData.next_price - coinData.usd) / coinData.usd * 100).toFixed(2);
 
             message += `\n\n🤖 <b>LSTM AI Prediction:</b>
-            ${lstmEmoji} <b>Trend:</b> ${lstmData.trend}
-            🎯 <b>Next Price:</b> $${lstmData.next_price.toFixed(2)} (${priceChange > 0 ? '+' : ''}${priceChange}%)
-            📊 <b>Confidence:</b> ${(lstmData.confidence * 100).toFixed(1)}%`;
+                ${lstmEmoji} <b>Trend:</b> ${lstmData.trend}
+                🎯 <b>Next Price:</b> $${lstmData.next_price.toFixed(2)} (${priceChange >= 0 ? '+' : ''}${priceChange}%)
+                📊 <b>Confidence:</b> ${(lstmData.confidence * 100).toFixed(1)}%`;
 
             if (lstmData.support_resistance) {
                 message += `
-            🛡️ <b>Support:</b> $${lstmData.support_resistance.support.toFixed(2)}
-            ⚡ <b>Resistance:</b> $${lstmData.support_resistance.resistance.toFixed(2)}`;
+                🛡️ <b>Support:</b> $${lstmData.support_resistance.support.toFixed(2)}
+                ⚡ <b>Resistance:</b> $${lstmData.support_resistance.resistance.toFixed(2)}`;
             }
         }
-
         if (alerts && alerts.length > 0) {
             message += '\n\n🚨 <b>Alerts:</b>';
             alerts.forEach(alert => {
@@ -327,7 +323,7 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
      * @param {boolean} forceAlert - Force alert sending
      */
     async analyzeAndAlert(symbol, forceAlert = false) {
-        // ✅ FIX: Validate symbol first
+
         if (!symbol || typeof symbol !== 'string' || symbol.trim() === '') {
             console.error('❌ Invalid symbol provided:', symbol);
             return {
@@ -336,11 +332,37 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
             };
         }
 
-        // ✅ Normalize symbol
         symbol = symbol.trim().toLowerCase();
         console.log(`🔍 Starting analysis for: ${symbol}`);
 
         try {
+            let lstmPredictions = null;
+
+            try {
+                // Try to get LSTM predictions
+                const predictLSTM = (await import('../services/LSTMForecast.service.js')).default;
+                lstmPredictions = await predictLSTM();
+                console.log('✅ LSTM predictions loaded');
+            } catch (error) {
+                console.warn('⚠️ LSTM predictions failed, continuing without them:', error.message);
+                // Create mock predictions to prevent errors
+                lstmPredictions = {
+                    btc: {
+                        next_price: 0,
+                        trend: 'NEUTRAL',
+                        confidence: 0.5,
+                        support: 0,
+                        resistance: 0
+                    },
+                    eth: {
+                        next_price: 0,
+                        trend: 'NEUTRAL',
+                        confidence: 0.5,
+                        support: 0,
+                        resistance: 0
+                    }
+                };
+            }
             const lstmData = symbol === 'bitcoin' ? lstmPredictions.btc : lstmPredictions.eth;
 
             console.log(`📊 LSTM Prediction for ${symbol}:`, {
@@ -349,11 +371,10 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                 confidence: lstmData.confidence
             });
 
-            const [lstmPredictions, priceData, techData, newsData] = await Promise.all([
-                predictLSTM(),
+            const [priceData, techData, newsData] = await Promise.all([
                 binancePriceService.getCryptoPrices([symbol]),
                 technicalIndicators.getTechnicalIndicators(symbol),
-                this.getLatestNews() // ✅ Add news sentiment
+                this.getLatestNews()
             ]);
 
             if (!priceData || !priceData[symbol]) {
@@ -364,6 +385,10 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
             if (!currentPrice || isNaN(currentPrice)) {
                 throw new Error(`Invalid price for ${symbol}: ${currentPrice}`);
             }
+
+            const priceChange = lstmData.next_price > 0 ?
+                ((lstmData.next_price - currentPrice) / currentPrice * 100).toFixed(2) :
+                '0.00';
 
             const previousPrice = this.previousPrices[symbol];
 
@@ -379,23 +404,43 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
             console.log(`📊 Alerts for ${symbol}: ${alerts.length}`);
 
             const analysisData = `
-                Analyze ${symbol.toUpperCase()}:
-                - Current Price: $${currentPrice.toFixed(2)}
-                - 24h Change: ${priceData[symbol].usd_24h_change.toFixed(2)}%
-                - Volume: $${(priceData[symbol].usd_24h_vol / 1000000).toFixed(2)}M
-                - Technical Summary: ${techData.summary.overall_signal}
-                - Active Alerts: ${alerts.length > 0 ? alerts.map(a => a.type).join(', ') : 'None'}
-                
-                🤖 LSTM AI Predictions:
-                - Predicted Next Price: $${lstmData.next_price.toFixed(2)}
-                - Expected Change: ${priceChange}%
-                - Trend: ${lstmData.trend}
-                - Model Confidence: ${(lstmData.confidence * 100).toFixed(1)}%
-                ${lstmData.support_resistance ? `- Support: $${lstmData.support_resistance.support.toFixed(2)}` : ''}
-                ${lstmData.support_resistance ? `- Resistance: $${lstmData.support_resistance.resistance.toFixed(2)}` : ''}
-                
-                Consider the LSTM prediction alongside technical indicators to provide comprehensive trading recommendations.
-            `;
+            Analyze ${symbol.toUpperCase()} market conditions:
+            
+            📊 CURRENT MARKET DATA:
+            - Current Price: $${currentPrice.toFixed(2)}
+            - 24h Change: ${priceData[symbol].usd_24h_change.toFixed(2)}%
+            - 24h Volume: $${(priceData[symbol].usd_24h_vol / 1000000).toFixed(2)}M
+            - Market Cap: $${(priceData[symbol].usd_market_cap / 1000000000).toFixed(2)}B
+            
+            🤖 LSTM AI PREDICTIONS:
+            - Predicted Next Price: $${lstmData.next_price.toFixed(2)}
+            - Expected Change: ${priceChange >= 0 ? '+' : ''}${priceChange}%
+            - Trend: ${lstmData.trend}
+            - Model Confidence: ${(lstmData.confidence * 100).toFixed(1)}%
+            ${lstmData.support_resistance ? `- Support Level: $${lstmData.support_resistance.support.toFixed(2)}` : ''}
+            ${lstmData.support_resistance ? `- Resistance Level: $${lstmData.support_resistance.resistance.toFixed(2)}` : ''}
+            
+            📈 TECHNICAL INDICATORS:
+            - RSI: ${techData.rsi || 'N/A'}
+            - MACD: ${techData.macd?.toFixed(2) || 'N/A'}
+            - Technical Summary: ${techData.summary?.overall_signal || 'NEUTRAL'}
+            - Signal Confidence: ${techData.summary?.confidence || 0}%
+            
+            📰 NEWS SENTIMENT:
+            ${newsData ? `- Sentiment: ${newsData.sentiment || 'NEUTRAL'}
+            - Impact: ${newsData.impact || 'LOW'}` : '- No recent news data available'}
+            
+            🚨 ACTIVE ALERTS:
+            ${alerts.length > 0 ? alerts.map(a => `- ${a.type}: ${a.message}`).join('\n') : '- No active alerts'}
+            
+            IMPORTANT: Provide trading recommendation with:
+            1. Action (BUY/SELL/HOLD)
+            2. Confidence (0-1)
+            3. Entry point
+            4. Stop loss
+            5. Take profit
+            6. Reasoning (consider LSTM prediction, technical indicators, and news sentiment)
+                    `.trim();
 
             const aiResult = await this.analyzeWithAI(analysisData);
 
@@ -414,7 +459,9 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                         trend: lstmData.trend,
                         confidence: lstmData.confidence,
                         priceChange: parseFloat(priceChange)
-                    }
+                    },
+                    technicalSignal: techData.summary?.overall_signal || 'NEUTRAL',
+                    newsSentiment: newsData?.sentiment || 'NEUTRAL'
                 }));
 
                 this.alertSystem.setTradingSignals(tradingSignals);
@@ -440,7 +487,8 @@ Provide 1–3 trading signals (if applicable). For each signal, include:
                     success: true,
                     message: 'Alert sent successfully',
                     alertCount: alerts.length,
-                    signalCount: aiResult.signals?.length || 0
+                    signalCount: aiResult.signals?.length || 0,
+                    analysis: aiResult.analysis,
                 };
             } else {
                 console.log(`ℹ️ No alert needed for ${symbol}`);
