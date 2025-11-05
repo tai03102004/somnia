@@ -11,8 +11,20 @@ class TradingAgent extends EventEmitter {
         this.orderHistory = [];
         this.balance = {};
         this.tradingMode = 'live';
+        this.autoTradingEnabled = false;
         this.binanceLive = BinanceLiveTrading;
         this.isRunning = false;
+
+        this.autoTradingConfig = {
+            minConfidence: 0.75,
+            maxPositions: 3,
+            positionSizePercent: 0.01, // 1% per trade
+            stopLossPercent: 0.03, // 3% stop loss
+            takeProfitPercent: 0.05, // 5% take profit
+            cooldownMinutes: 15 // Wait 15 minutes between trades on same symbol
+        };
+
+        this.lastTradeTime = new Map();
 
         // ✨ Trading stats for P&L tracking
         this.tradingStats = {
@@ -70,6 +82,135 @@ class TradingAgent extends EventEmitter {
                 error: error.message
             };
         }
+    }
+
+    async handleAutoTradingSignal(signal) {
+        if (!this.autoTradingEnabled) {
+            console.log('🤖 Auto trading disabled, skipping signal');
+            return {
+                success: false,
+                reason: 'Auto trading disabled'
+            };
+        }
+
+        // Check cooldown
+        const symbol = this.convertCoinToSymbol(signal.coin);
+        const lastTrade = this.lastTradeTime.get(symbol);
+        const cooldownMs = this.autoTradingConfig.cooldownMinutes * 60 * 1000;
+
+        if (lastTrade && (Date.now() - lastTrade) < cooldownMs) {
+            console.log(`⏰ Cooldown active for ${symbol}, skipping signal`);
+            return {
+                success: false,
+                reason: 'Cooldown active'
+            };
+        }
+
+        // Check confidence threshold
+        if (signal.confidence < this.autoTradingConfig.minConfidence) {
+            console.log(`📊 Signal confidence ${signal.confidence} below threshold ${this.autoTradingConfig.minConfidence}`);
+            return {
+                success: false,
+                reason: 'Confidence too low'
+            };
+        }
+
+        // Check max positions
+        if (this.portfolio.size >= this.autoTradingConfig.maxPositions) {
+            console.log(`📊 Max positions (${this.autoTradingConfig.maxPositions}) reached`);
+            return {
+                success: false,
+                reason: 'Max positions reached'
+            };
+        }
+
+        console.log(`🤖 AUTO TRADING: Executing signal for ${signal.coin.toUpperCase()}`);
+
+        // Execute the signal
+        const result = await this.executeSignal(signal);
+
+        if (result.success) {
+            this.lastTradeTime.set(symbol, Date.now());
+        }
+
+        return result;
+    }
+
+    validateSignal(signal) {
+        if (!signal.coin || !signal.action || !signal.confidence) {
+            console.log('❌ Invalid signal format');
+            return false;
+        }
+
+        if (this.autoTradingEnabled) {
+            // Stricter validation for auto trading
+            if (signal.confidence < this.autoTradingConfig.minConfidence) {
+                console.log(`❌ Confidence ${signal.confidence} below auto trading threshold`);
+                return false;
+            }
+
+            if (this.portfolio.size >= this.autoTradingConfig.maxPositions) {
+                console.log(`❌ Max positions reached: ${this.portfolio.size}/${this.autoTradingConfig.maxPositions}`);
+                return false;
+            }
+        } else {
+            // Manual trading - more relaxed validation
+            if (signal.confidence < 0.5) {
+                console.log(`❌ Manual trade confidence too low: ${signal.confidence}`);
+                return false;
+            }
+        }
+
+        // Check balance
+        if (this.balance.USDT && this.balance.USDT.free < 10) {
+            console.log(`❌ Insufficient balance: ${this.balance.USDT.free} USDT`);
+            return false;
+        }
+
+        return true;
+    }
+
+    calculatePositionSize(signal) {
+        const accountValue = this.balance?.USDT?.free || 0;
+
+        if (this.autoTradingEnabled) {
+            // Use configured percentage for auto trading
+            const autoTradeValue = accountValue * this.autoTradingConfig.positionSizePercent;
+            console.log(`🤖 Auto trading position size: ${autoTradeValue} (${this.autoTradingConfig.positionSizePercent * 100}% of ${accountValue})`);
+            return autoTradeValue;
+        } else {
+            // Manual trading - more flexible sizing
+            const riskPercentage = 0.02;
+            const maxTradeValue = accountValue * 0.05; // Up to 5% for manual trades
+
+            if (signal.stopLoss && signal.entryPoint) {
+                const riskPerUnit = Math.abs(signal.entryPoint - signal.stopLoss);
+                const riskAmount = accountValue * riskPercentage;
+                const quantity = riskAmount / riskPerUnit;
+                return Math.min(quantity * signal.entryPoint, maxTradeValue);
+            }
+
+            return accountValue * 0.02; // 2% default for manual
+        }
+    }
+
+    getAutoTradingStatus() {
+        return {
+            enabled: this.autoTradingEnabled,
+            mode: this.tradingMode,
+            config: this.autoTradingConfig,
+            activePositions: this.portfolio.size,
+            maxPositions: this.autoTradingConfig.maxPositions,
+            lastTradeTime: Object.fromEntries(this.lastTradeTime)
+        };
+    }
+
+    updateAutoTradingConfig(config) {
+        this.autoTradingConfig = {
+            ...this.autoTradingConfig,
+            ...config
+        };
+        console.log('🔧 Auto trading config updated:', this.autoTradingConfig);
     }
 
     // ✨ Main execution method

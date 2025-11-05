@@ -161,13 +161,15 @@ class BlockchainConnector extends EventEmitter {
                 coin.toUpperCase(), // symbol: string
                 action.toUpperCase(), // action: string
                 Math.floor(confidence * 100), // confidence: uint256 (0-100)
-                Math.floor(entryPoint), // entryPoint: uint256 (no wei conversion)
+                Math.floor(entryPoint), // entryPoint: uint256
                 Math.floor(stopLoss || 0), // stopLoss: uint256
                 Math.floor(takeProfit || 0) // takeProfit: uint256
             );
 
             const receipt = await tx.wait();
             const signalId = await this.contracts.signalStorage.signalCount();
+
+            this.metrics.totalSignalsSubmitted++;
 
             console.log(`✅ Signal #${signalId} submitted: ${receipt.hash}`);
 
@@ -197,41 +199,41 @@ class BlockchainConnector extends EventEmitter {
         //     };
         // }
 
-        // try {
-        const {
-            symbol,
-            side,
-            amount
-        } = trade;
+        try {
+            const {
+                symbol,
+                side,
+                amount
+            } = trade;
 
-        // ✅ FIX: Convert to proper format
-        const tx = await this.contracts.tradeExecutor.executeTrade(
-            symbol.toUpperCase(), // symbol: string
-            side.toUpperCase(), // side: string
-            Math.floor(amount * 1000000) // Scale to 6 decimals
-        );
+            // ✅ FIX: Convert to proper format
+            const tx = await this.contracts.tradeExecutor.executeTrade(
+                symbol.toUpperCase(), // symbol: string
+                side.toUpperCase(), // side: string
+                Math.floor(amount * 1000000) // Scale to 6 decimals
+            );
 
-        const receipt = await tx.wait();
-        const tradeId = await this.contracts.tradeExecutor.tradeCount();
+            const receipt = await tx.wait();
+            const tradeId = await this.contracts.tradeExecutor.tradeCount();
 
-        this.metrics.totalTradesExecuted++;
-            
-        console.log(`✅ Trade #${tradeId} executed on-chain: ${receipt.hash}`);
+            this.metrics.totalTradesExecuted++;
 
-        return {
-            success: true,
-            tradeId: tradeId.toString(),
-            txHash: receipt.hash,
-            blockNumber: receipt.blockNumber,
-            explorerUrl: `https://somnia-devnet.socialscan.io/tx/${receipt.hash}`
-        };
-        // } catch (error) {
-        //     console.error('❌ Execute trade failed:', error.message);
-        //     return {
-        //         success: false,
-        //         error: error.message
-        //     };
-        // }
+            console.log(`✅ Trade #${tradeId} executed on-chain: ${receipt.hash}`);
+
+            return {
+                success: true,
+                tradeId: tradeId.toString(),
+                txHash: receipt.hash,
+                blockNumber: receipt.blockNumber,
+                explorerUrl: `https://shannon-explorer.somnia.network/tx/${receipt.hash}`
+            };
+        } catch (error) {
+            console.error('❌ Execute trade failed:', error.message);
+            return {
+                success: false,
+                error: error.message
+            };
+        }
     }
 
     async getSignalById(signalId) {
@@ -243,6 +245,40 @@ class BlockchainConnector extends EventEmitter {
         // }
 
         try {
+            const signal = await this.contracts.signalStorage.signals(signalId);
+
+            return {
+                success: true,
+                data: {
+                    id: signalId,
+                    submitter: signal.submitter,
+                    symbol: signal.symbol,
+                    action: signal.action,
+                    confidence: Number(signal.confidence),
+                    entryPoint: Number(signal.entryPoint),
+                    stopLoss: Number(signal.stopLoss),
+                    takeProfit: Number(signal.takeProfit),
+                    timestamp: new Date(Number(signal.timestamp) * 1000).toISOString(),
+                    executed: signal.executed
+                }
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+    async getTradeById(tradeId) {
+        if (!this.isEnabled || !this.contracts.tradeExecutor) {
+            return {
+                success: false,
+                error: 'TradeExecutor not available'
+            };
+        }
+
+        try {
+            // ✅ FIX: Use tradeId parameter correctly
             const trade = await this.contracts.tradeExecutor.trades(tradeId);
 
             return {
@@ -275,22 +311,23 @@ class BlockchainConnector extends EventEmitter {
         // }
 
         try {
-            const address = userAddress || this.wallet.address;
-            const tradeIds = await this.contracts.tradeExecutor.userTrades(address);
+            // ✅ FIX: Get signals, not trades
+            const totalSignals = await this.contracts.signalStorage.signalCount();
+            const signals = [];
 
-            const trades = [];
-            for (const tradeId of tradeIds) {
-                const trade = await this.getTradeById(Number(tradeId));
-                if (trade.success) {
-                    trades.push(trade.data);
+            const startId = Math.max(1, Number(totalSignals) - limit + 1);
+
+            for (let i = startId; i <= Number(totalSignals); i++) {
+                const signal = await this.getSignalById(i);
+                if (signal.success) {
+                    signals.push(signal.data);
                 }
             }
 
             return {
                 success: true,
-                address,
-                total: trades.length,
-                data: trades
+                data: signals.reverse(), // Latest first
+                total: signals.length
             };
         } catch (error) {
             return {
@@ -302,7 +339,10 @@ class BlockchainConnector extends EventEmitter {
 
     async getUserVolume(userAddress = null) {
         if (!this.isEnabled || !this.contracts.tradeExecutor) {
-            return { success: false, error: 'TradeExecutor not available' };
+            return {
+                success: false,
+                error: 'TradeExecutor not available'
+            };
         }
 
         try {
@@ -315,7 +355,10 @@ class BlockchainConnector extends EventEmitter {
                 totalVolume: Number(volume) / 1000000
             };
         } catch (error) {
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
@@ -394,13 +437,19 @@ class BlockchainConnector extends EventEmitter {
             };
         } catch (error) {
             console.error('❌ Create proposal failed:', error.message);
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
     async getProposal(proposalId) {
         if (!this.isEnabled || !this.contracts.daoVoting) {
-            return { success: false, error: 'DAO Voting not available' };
+            return {
+                success: false,
+                error: 'DAO Voting not available'
+            };
         }
 
         try {
@@ -420,7 +469,10 @@ class BlockchainConnector extends EventEmitter {
                 }
             };
         } catch (error) {
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
@@ -435,7 +487,7 @@ class BlockchainConnector extends EventEmitter {
         try {
             // Check if user has voting power
             const votingPower = await this.contracts.daoVoting.votingPower(this.wallet.address);
-            
+
             if (Number(votingPower) === 0) {
                 throw new Error('No voting power - need to hold reward tokens');
             }
@@ -456,13 +508,19 @@ class BlockchainConnector extends EventEmitter {
             };
         } catch (error) {
             console.error('❌ Vote failed:', error.message);
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
     async getVotingPower(userAddress = null) {
         if (!this.isEnabled || !this.contracts.daoVoting) {
-            return { success: false, error: 'DAO Voting not available' };
+            return {
+                success: false,
+                error: 'DAO Voting not available'
+            };
         }
 
         try {
@@ -475,7 +533,10 @@ class BlockchainConnector extends EventEmitter {
                 votingPower: Number(power)
             };
         } catch (error) {
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
@@ -495,7 +556,7 @@ class BlockchainConnector extends EventEmitter {
 
             // Mint new tokens instead of transfer (if owner)
             const isOwner = await this.contracts.rewardToken.owner() === this.wallet.address;
-            
+
             let tx;
             if (isOwner) {
                 tx = await this.contracts.rewardToken.mint(userAddress, rewardAmount);
@@ -518,13 +579,19 @@ class BlockchainConnector extends EventEmitter {
             };
         } catch (error) {
             console.error('❌ Reward failed:', error.message);
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
     async getTokenBalance(userAddress = null) {
         if (!this.isEnabled || !this.contracts.rewardToken) {
-            return { success: false, error: 'Reward token not available' };
+            return {
+                success: false,
+                error: 'Reward token not available'
+            };
         }
 
         try {
@@ -538,22 +605,35 @@ class BlockchainConnector extends EventEmitter {
                 balanceWei: balance.toString()
             };
         } catch (error) {
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
     async distributeRewards(recipients) {
         if (!this.isEnabled || !this.contracts.rewardToken) {
-            return { success: false, error: 'Reward token not available' };
+            return {
+                success: false,
+                error: 'Reward token not available'
+            };
         }
 
         const results = [];
         let totalDistributed = 0;
 
-        for (const { address, amount, reason } of recipients) {
+        for (const {
+                address,
+                amount,
+                reason
+            } of recipients) {
             const result = await this.rewardUser(address, amount, reason);
-            results.push({ address, ...result });
-            
+            results.push({
+                address,
+                ...result
+            });
+
             if (result.success) {
                 totalDistributed += amount;
             }
@@ -576,19 +656,30 @@ class BlockchainConnector extends EventEmitter {
     async retryCachedSubmissions() {
         if (!this.isEnabled) {
             console.log('⚠️ Blockchain still disabled - skipping retry');
-            return { success: false, error: 'Blockchain not available' };
+            return {
+                success: false,
+                error: 'Blockchain not available'
+            };
         }
 
         const results = {
-            signals: { attempted: 0, successful: 0, failed: 0 },
-            trades: { attempted: 0, successful: 0, failed: 0 }
+            signals: {
+                attempted: 0,
+                successful: 0,
+                failed: 0
+            },
+            trades: {
+                attempted: 0,
+                successful: 0,
+                failed: 0
+            }
         };
 
         // Retry signals
         for (const [timestamp, signal] of this.signalCache.entries()) {
             results.signals.attempted++;
             const result = await this.submitSignal(signal);
-            
+
             if (result.success) {
                 this.signalCache.delete(timestamp);
                 results.signals.successful++;
@@ -601,7 +692,7 @@ class BlockchainConnector extends EventEmitter {
         for (const [timestamp, trade] of this.tradeCache.entries()) {
             results.trades.attempted++;
             const result = await this.executeTrade(trade);
-            
+
             if (result.success) {
                 this.tradeCache.delete(timestamp);
                 results.trades.successful++;
@@ -618,9 +709,46 @@ class BlockchainConnector extends EventEmitter {
         };
     }
 
+    async getUserTrades(userAddress = null) {
+        if (!this.isEnabled || !this.contracts.tradeExecutor) {
+            return {
+                success: false,
+                error: 'TradeExecutor not available'
+            };
+        }
+
+        try {
+            const address = userAddress || this.wallet.address;
+            const tradeIds = await this.contracts.tradeExecutor.userTrades(address);
+
+            const trades = [];
+            for (const tradeId of tradeIds) {
+                const trade = await this.getTradeById(Number(tradeId));
+                if (trade.success) {
+                    trades.push(trade.data);
+                }
+            }
+
+            return {
+                success: true,
+                address,
+                total: trades.length,
+                data: trades
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
     async getAnalytics() {
         if (!this.isEnabled) {
-            return { success: false, error: 'Blockchain not available' };
+            return {
+                success: false,
+                error: 'Blockchain not available'
+            };
         }
 
         try {
@@ -655,7 +783,10 @@ class BlockchainConnector extends EventEmitter {
                 metrics: this.metrics
             };
         } catch (error) {
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 

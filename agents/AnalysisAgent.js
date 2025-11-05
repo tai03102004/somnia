@@ -95,35 +95,35 @@ class AIAnalysisAgent extends EventEmitter {
             }
 
             const enhancedPrompt = `
-${this.aiAgent.instructions}
+                ${this.aiAgent.instructions}
 
-Based on the following data, provide:
-1. Market analysis (consider news sentiment if provided)
-2. Trading signals (if any) with entry point, stop loss, take profit
-3. Risk assessment
+                Based on the following data, provide:
+                1. Market analysis (consider news sentiment if provided)
+                2. Trading signals (if any) with entry point, stop loss, take profit
+                3. Risk assessment
 
-Data: ${enhancedData}
+                Data: ${enhancedData}
 
-Please format the response in **clear, human-readable format** using Markdown. Highlight important sections like:
+                Please format the response in **clear, human-readable format** using Markdown. Highlight important sections like:
 
-### 🔍 Market Analysis
-- A brief but insightful analysis of the market trend
+                ### 🔍 Market Analysis
+                - A brief but insightful analysis of the market trend
 
-### 📈 Trading Signals
-Provide 1–3 trading signals (if applicable). For each signal, include:
-- **Coin**: The coin symbol (BTC or ETH)
-- **Action**: One of BUY, SELL, or HOLD
-- **Confidence**: A number between 0 and 1 (e.g. 0.85)
-- **Entry Point**: Suggested price to enter
-- **Stop Loss**: Suggested stop loss price
-- **Take Profit**: Suggested take profit target
-- **Reasoning**: Explain why this signal is generated, based on technical indicators or trend
+                ### 📈 Trading Signals
+                Provide 1–3 trading signals (if applicable). For each signal, include:
+                - **Coin**: The coin symbol (BTC or ETH)
+                - **Action**: One of BUY, SELL, or HOLD
+                - **Confidence**: A number between 0 and 1 (e.g. 0.85)
+                - **Entry Point**: Suggested price to enter
+                - **Stop Loss**: Suggested stop loss price
+                - **Take Profit**: Suggested take profit target
+                - **Reasoning**: Explain why this signal is generated, based on technical indicators or trend
 
-**Risk Assessment**
-- Short bullet points
+                **Risk Assessment**
+                - Short bullet points
 
-**Summary**
-- Final thoughts or advice
+                **Summary**
+                - Final thoughts or advice
             `.trim();
 
             const apiUrl = `${this.aiAgent.baseUrl}/models/${this.aiAgent.model}:generateContent`;

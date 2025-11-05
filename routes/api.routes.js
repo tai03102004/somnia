@@ -2,7 +2,8 @@ import express from 'express';
 import blockchainConnector from '../services/BlockchainConnector.service.js';
 
 const router = express.Router();
-
+import dotenv from 'dotenv';
+dotenv.config();
 // Health check
 router.get('/health', async (req, res) => {
     try {
@@ -318,6 +319,263 @@ router.get('/trading/balance', async (req, res) => {
     }
 });
 
+
+router.post('/trading/auto-trading', async (req, res) => {
+    try {
+        const {
+            enabled,
+            mode = 'paper'
+        } = req.body;
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        // Update auto trading status
+        orchestrator.agents.trading.autoTradingEnabled = enabled;
+        orchestrator.agents.trading.tradingMode = mode;
+
+        // If enabling, also enable analysis agent auto-execution
+        if (orchestrator.agents.analysis) {
+            orchestrator.agents.analysis.autoExecuteSignals = enabled;
+        }
+
+        const statusMessage = enabled ?
+            `Auto trading enabled in ${mode} mode` :
+            'Auto trading disabled';
+
+        console.log(`🤖 ${statusMessage}`);
+
+        res.json({
+            success: true,
+            message: statusMessage,
+            autoTrading: enabled,
+            mode: mode,
+            timestamp: Date.now()
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.get('/trading/auto-trading/status', async (req, res) => {
+    try {
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        res.json({
+            success: true,
+            autoTrading: orchestrator.agents.trading.autoTradingEnabled || false,
+            mode: orchestrator.agents.trading.tradingMode || 'paper',
+            analysisAutoExecute: orchestrator.agents.analysis?.autoExecuteSignals || false
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.post('/trading/mode', async (req, res) => {
+    try {
+        const {
+            mode
+        } = req.body;
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!['paper', 'live'].includes(mode)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Mode must be either "paper" or "live"'
+            });
+        }
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        orchestrator.agents.trading.tradingMode = mode;
+
+        res.json({
+            success: true,
+            message: `Trading mode switched to ${mode}`,
+            mode: mode
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.post('/trading/execute', async (req, res) => {
+    try {
+        const {
+            symbol,
+            side,
+            amount,
+            type = 'market',
+            price
+        } = req.body;
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        // Create a manual signal
+        const manualSignal = {
+            coin: symbol.replace('USDT', '').toLowerCase(),
+            action: side.toUpperCase(),
+            confidence: 1.0, // Manual trades have full confidence
+            entryPoint: price || 0,
+            stopLoss: 0,
+            takeProfit: 0,
+            reasoning: 'Manual trade execution',
+            manual: true
+        };
+
+        const result = await orchestrator.agents.trading.executeSignal(manualSignal);
+
+        res.json({
+            success: result.success,
+            order: result.order,
+            message: result.success ? 'Trade executed successfully' : result.error
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.post('/trading/close-position', async (req, res) => {
+    try {
+        const {
+            symbol
+        } = req.body;
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        const position = orchestrator.agents.trading.portfolio.get(symbol);
+        if (!position) {
+            return res.status(404).json({
+                success: false,
+                error: 'Position not found'
+            });
+        }
+
+        // Create close signal
+        const closeSignal = {
+            coin: symbol.replace('USDT', '').toLowerCase(),
+            action: 'SELL',
+            confidence: 1.0,
+            entryPoint: position.currentPrice || position.entryPrice,
+            stopLoss: 0,
+            takeProfit: 0,
+            reasoning: 'Manual position close',
+            manual: true
+        };
+
+        const result = await orchestrator.agents.trading.executeSignal(closeSignal);
+
+        res.json({
+            success: result.success,
+            order: result.order,
+            message: result.success ? 'Position closed successfully' : result.error
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.post('/trading/close-all', async (req, res) => {
+    try {
+        const orchestrator = req.app.get('orchestrator');
+
+        if (!orchestrator || !orchestrator.agents?.trading) {
+            return res.status(503).json({
+                success: false,
+                error: 'Trading agent not available'
+            });
+        }
+
+        const results = [];
+        const portfolio = orchestrator.agents.trading.portfolio;
+
+        for (const [symbol, position] of portfolio) {
+            try {
+                const closeSignal = {
+                    coin: symbol.replace('USDT', '').toLowerCase(),
+                    action: 'SELL',
+                    confidence: 1.0,
+                    entryPoint: position.currentPrice || position.entryPrice,
+                    stopLoss: 0,
+                    takeProfit: 0,
+                    reasoning: 'Close all positions',
+                    manual: true
+                };
+
+                const result = await orchestrator.agents.trading.executeSignal(closeSignal);
+                results.push({
+                    symbol,
+                    success: result.success,
+                    order: result.order
+                });
+            } catch (error) {
+                results.push({
+                    symbol,
+                    success: false,
+                    error: error.message
+                });
+            }
+        }
+
+        res.json({
+            success: true,
+            results: results,
+            closed: results.filter(r => r.success).length,
+            total: results.length
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Analysis endpoints
 router.post('/analysis/trigger', async (req, res) => {
     // try {
@@ -354,10 +612,7 @@ router.post('/analysis/trigger', async (req, res) => {
         });
     }
 
-    console.log("coin:", normalizedCoin)
-
     const result = await orchestrator.agents.analysis.analyzeAndAlert(normalizedCoin, true);
-    console.log("afasf: ", result)
     res.json(result);
     // } catch (error) {
     //     res.status(500).json({
@@ -366,6 +621,156 @@ router.post('/analysis/trigger', async (req, res) => {
     //     });
     // }
 });
+
+router.post('/ai/chat', async (req, res) => {
+    try {
+        const {
+            message
+        } = req.body;
+
+        if (!message || typeof message !== 'string' || message.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                error: 'Message is required'
+            });
+        }
+
+        // Get current context data
+        const orchestrator = req.app.get('orchestrator');
+        let contextData = '';
+
+        try {
+            if (orchestrator && orchestrator.agents?.analysis) {
+                const marketStatus = await orchestrator.agents.analysis.getMarketStatus();
+                const activeSignals = orchestrator.agents.analysis.alertSystem.getActiveSignals();
+
+                if (marketStatus.data && marketStatus.data.length > 0) {
+                    contextData += `\nCurrent Market Data:\n`;
+                    marketStatus.data.forEach(coin => {
+                        contextData += `- ${coin.name}: $${coin.current_price} (${coin.price_change_percentage_24h?.toFixed(2)}% 24h)\n`;
+                    });
+                }
+
+                if (activeSignals && activeSignals.length > 0) {
+                    contextData += `\nActive Trading Signals:\n`;
+                    activeSignals.forEach(signal => {
+                        contextData += `- ${signal.coin.toUpperCase()}: ${signal.action} (${(signal.confidence * 100).toFixed(0)}% confidence)\n`;
+                    });
+                }
+            }
+        } catch (error) {
+            console.log('Could not fetch context data:', error.message);
+        }
+
+        // Call Gemini AI directly
+        const aiResponse = await callGeminiAI(message.trim(), contextData);
+
+        res.json({
+            success: true,
+            response: aiResponse,
+            timestamp: Date.now()
+        });
+
+    } catch (error) {
+        console.error('AI Chat error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to process AI chat request'
+        });
+    }
+});
+
+// Direct Gemini AI call function
+const GEMINI_API_KEY = process.env.GEMINI;
+
+export async function callGeminiAI(userMessage, contextData = '') {
+    try {
+        // Create system prompt
+        const systemPrompt = `You are a professional cryptocurrency trading assistant powered by Somnia blockchain technology.
+
+            About Somnia:
+            - Somnia is a high-performance Layer 1 blockchain designed for AI applications and gaming
+            - It provides transparent on-chain storage for trading signals and analytics
+            - Features smart contracts for automated trading and risk management
+            - Enables community governance through DAO voting
+
+            Your capabilities:
+            - Cryptocurrency market analysis and trading advice
+            - Explain blockchain and Somnia technology
+            - Portfolio management guidance
+            - Technical analysis (RSI, MACD, moving averages,s etc.)
+            - General crypto knowledge and education
+
+            ${contextData ? `Current Market Context:${contextData}` : 'Market data is currently loading...'}
+
+            Important: Always include risk warnings when giving financial advice. Never guarantee profits. Emphasize doing your own research.
+
+            Please respond in a helpful, professional manner. Use emojis appropriately and format your response clearly.`;
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+        const body = {
+            contents: [{
+                parts: [{
+                    text: `${systemPrompt}\n\nUser Question: ${userMessage}`
+                }]
+            }],
+            generationConfig: {
+                temperature: 0.7,
+                topK: 1,
+                topP: 1,
+                maxOutputTokens: 2048,
+                stopSequences: []
+            },
+            safetySettings: [{
+                    category: "HARM_CATEGORY_HARASSMENT",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                },
+                {
+                    category: "HARM_CATEGORY_HATE_SPEECH",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                },
+                {
+                    category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                },
+                {
+                    category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                }
+            ]
+        };
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(body)
+        });
+
+        const responseText = await response.text();
+
+        if (!response.ok) {
+            console.error('❌ Gemini API Error Details:', responseText);
+            throw new Error(`Gemini API Error: ${response.status}\nDetails: ${responseText}`);
+        }
+
+        const data = JSON.parse(responseText);
+
+        if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) {
+            const aiResponse = data.candidates[0].content.parts[0].text;
+            console.log('✅ AI Response received (length):', aiResponse.length);
+            return aiResponse;
+        } else {
+            console.error('❌ Invalid response format:', JSON.stringify(data, null, 2));
+            throw new Error('Invalid Gemini response format');
+        }
+    } catch (error) {
+        console.error('❌ Gemini AI Error:', error.message);
+    }
+}
+
 
 // Blockchain endpoints
 
@@ -547,6 +952,48 @@ router.post('/dao/proposal', async (req, res) => {
     }
 });
 
+router.get('/dao/voting-power/:address?', async (req, res) => {
+    try {
+        const {
+            address
+        } = req.params;
+        const result = await blockchainConnector.getVotingPower(address);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+router.get('/dao/signals', async (req, res) => {
+    try {
+        // Get signals with 60-75% confidence for DAO voting
+        const signals = await blockchainConnector.getLatestSignals(50);
+
+        if (signals.success) {
+            const eligibleSignals = signals.data.filter(s =>
+                s.confidence >= 60 && s.confidence < 75
+            );
+
+            res.json({
+                success: true,
+                signals: eligibleSignals
+            });
+        } else {
+            res.json(signals);
+        }
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+
+
 router.get('/dao/proposal/:id', async (req, res) => {
     try {
         const result = await blockchainConnector.getProposal(req.params.id);
@@ -646,6 +1093,18 @@ router.post('/rewards/bulk-distribute', async (req, res) => {
         res.json(result);
     } catch (error) {
         res.status(500).json({
+            error: error.message
+        });
+    }
+});
+
+router.get('/rewards/balance', async (req, res) => {
+    try {
+        const result = await blockchainConnector.getTokenBalance();
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
             error: error.message
         });
     }
